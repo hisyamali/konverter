@@ -12,10 +12,11 @@ import pdfplumber
 from openpyxl import Workbook
 
 PARALLEL_MIN_PAGES = 12
-PARALLEL_MAX_WORKERS = 8
-PARALLEL_CHUNK_PAGES = 20
+PARALLEL_MAX_WORKERS = int(os.environ.get("KONVERTER_MAX_WORKERS", "4"))
+PARALLEL_CHUNK_PAGES = int(os.environ.get("KONVERTER_CHUNK_PAGES", "20"))
 PARALLEL_MAX_TASKS_PER_CHILD = 8
 PARALLEL_STALL_REPORT_SECONDS = 45
+PARALLEL_STALL_FAIL_SECONDS = 180
 
 PDF_TABLE_SETTINGS = {
     "vertical_strategy": "lines",
@@ -134,34 +135,48 @@ def _read_pages_sequential(input_path, total_pages, progress):
 def _read_chunks_parallel(input_path, chunks, workers, total_pages, progress):
     results = {}
     pages_read = 0
+    last_success = time.monotonic()
 
-    with ProcessPoolExecutor(
+    executor = ProcessPoolExecutor(
         max_workers=workers,
         initializer=_init_pdf_worker,
         initargs=(str(input_path),),
         max_tasks_per_child=PARALLEL_MAX_TASKS_PER_CHILD,
-    ) as executor:
-        futures = {executor.submit(_extract_chunk_task, chunk): chunk for chunk in chunks}
-        pending = set(futures)
+    )
+    futures = {executor.submit(_extract_chunk_task, chunk): chunk for chunk in chunks}
+    pending = set(futures)
 
-        try:
-            while pending:
-                try:
-                    for future in as_completed(pending, timeout=PARALLEL_STALL_REPORT_SECONDS):
-                        start, chunk_tables = future.result()
-                        results[start] = chunk_tables
-                        chunk_start, chunk_end = futures[future]
-                        pages_read += chunk_end - chunk_start
-                        pending.remove(future)
-                        _report(progress, _percent_from_pages(pages_read, total_pages), _status_message(pages_read, total_pages))
-                except TimeoutError:
-                    _report(
-                        progress,
-                        _percent_from_pages(pages_read, total_pages),
-                        f"{_status_message(pages_read, total_pages)} — pembacaan melambat, tetap berjalan",
+    try:
+        while pending:
+            try:
+                for future in as_completed(pending, timeout=PARALLEL_STALL_REPORT_SECONDS):
+                    start, chunk_tables = future.result()
+                    results[start] = chunk_tables
+                    chunk_start, chunk_end = futures[future]
+                    pages_read += chunk_end - chunk_start
+                    pending.remove(future)
+                    last_success = time.monotonic()
+                    _report(progress, _percent_from_pages(pages_read, total_pages), _status_message(pages_read, total_pages))
+            except TimeoutError:
+                stalled_for = int(time.monotonic() - last_success)
+                _report(
+                    progress,
+                    _percent_from_pages(pages_read, total_pages),
+                    f"{_status_message(pages_read, total_pages)} — pembacaan melambat (±{stalled_for} detik), tetap berjalan",
+                )
+
+                if stalled_for >= PARALLEL_STALL_FAIL_SECONDS:
+                    _abort_executor(executor, pending)
+                    raise RuntimeError(
+                        f"Pembacaan PDF terhenti (tidak ada kemajuan sejak halaman {pages_read}). "
+                        f"Mesin sibuk atau kehabisan memori. Tutup aplikasi lain lalu coba lagi; "
+                        f"opsional turunkan beban dengan KONVERTER_MAX_WORKERS={max(2, workers // 2)}."
                     )
-        except BrokenProcessPool:
-            raise RuntimeError("Proses pembacaan PDF terhenti. Silakan coba lagi.")
+    except BrokenProcessPool:
+        _abort_executor(executor, pending)
+        raise RuntimeError("Proses pembacaan PDF terhenti. Silakan coba lagi.")
+    else:
+        executor.shutdown(wait=True)
 
     ordered = []
 
@@ -169,6 +184,16 @@ def _read_chunks_parallel(input_path, chunks, workers, total_pages, progress):
         ordered.extend(results[start])
 
     return ordered
+
+
+def _abort_executor(executor, pending):
+    for future in pending:
+        future.cancel()
+
+    try:
+        executor.shutdown(wait=False, cancel_futures=True)
+    except ValueError:
+        pass
 
 
 def _init_pdf_worker(pdf_path):
