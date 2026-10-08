@@ -1,0 +1,9 @@
+{
+  "name": "Konverter PDF CSV ke Excel",
+  "short_name": "Konverter",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#16213e",
+  "description": "Aplikasi web mobile untuk konversi PDF dan CSV ke Excel."
+}

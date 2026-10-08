@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#16213e">
+    <title>Konverter PDF/CSV ke Excel</title>
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <main class="page-shell">
+        <section class="hero-card">
+            <div class="hero-copy">
+                <p class="eyebrow">Web & Mobile Converter</p>
+                <h1>Ubah PDF atau CSV menjadi Excel dalam beberapa detik.</h1>
+                <p class="description">Upload file, lihat pratinjau, lalu konversi dan download hasilnya sebagai file .xlsx.</p>
+            </div>
+
+            <div class="converter-card">
+                <ol class="steps" aria-label="Langkah">
+                    <li id="step-upload" class="step is-active"><span>1</span> Unggah &amp; pratinjau</li>
+                    <li id="step-convert" class="step"><span>2</span> Konversi</li>
+                </ol>
+
+                <label for="conversion_type">Jenis konversi</label>
+                <select id="conversion_type" name="conversion_type" required>
+                    <option value="pdf-to-excel">PDF ke Excel</option>
+                    <option value="csv-to-excel">CSV ke Excel</option>
+                </select>
+
+                <label for="file">File sumber</label>
+                <input id="file" type="file" name="file" accept=".csv,.pdf" required>
+                <p id="preview-status" class="preview-status" hidden></p>
+
+                <div id="preview-panel" class="!preview-panel" hidden>
+                    <div class="preview-meta">
+                        <span id="preview-filename" class="preview-badge preview-badge-file"></span>
+                        <span id="preview-facts" class="preview-facts"></span>
+                    </div>
+                    <p id="preview-estimate" class="preview-estimate" hidden></p>
+                    <div class="preview-table-scroll">
+                        <table class="preview-table">
+                            <thead id="preview-head"></thead>
+                            <tbody id="preview-body"></tbody>
+                        </table>
+                    </div>
+                    <p id="preview-caption" class="preview-caption"></p>
+                </div>
+
+                <button id="submit-button" type="button" disabled>Konversi Sekarang</button>
+
+                <noscript>
+                    <p class="preview-status">JavaScript diperlukan untuk alur 2 langkah (unggah → pratinjau → konversi).</p>
+                </noscript>
+            </div>
+        </section>
+
+        <section class="feature-grid" aria-label="Fitur aplikasi">
+            <article>
+                <span>01</span>
+                <h2>PDF ke Excel</h2>
+                <p>Membaca tabel dari PDF dan menggabungkan hasilnya dalam satu sheet Excel.</p>
+            </article>
+            <article>
+                <span>02</span>
+                <h2>CSV ke Excel</h2>
+                <p>Mendeteksi pemisah koma atau titik koma secara otomatis.</p>
+            </article>
+            <article>
+                <span>03</span>
+                <h2>Pratinjau Sebelum Konversi</h2>
+                <p>Cek isi file (kolom, baris, jumlah halaman) sebelum proses konversi berjalan.</p>
+            </article>
+        </section>
+    </main>
+
+    <div id="loading-overlay" class="loading-overlay" hidden>
+        <div class="loading-panel" role="dialog" aria-modal="true" aria-labelledby="loading-title">
+            <h2 id="loading-title" class="loading-title">Memproses file</h2>
+            <p id="loading-message" class="loading-message">Menyiapkan file</p>
+            <p id="loading-eta" class="loading-eta" hidden></p>
+            <p id="loading-eta-running" class="loading-eta-running" hidden></p>
+
+            <div class="progress-track" role="progressbar" aria-labelledby="loading-title" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+
+            <p class="loading-percent"><span id="progress-percent">0</span>%</p>
+            <p id="loading-error" class="loading-error" hidden></p>
+            <button id="loading-close" class="loading-close" type="button" hidden>Tutup</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
