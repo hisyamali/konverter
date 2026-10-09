@@ -16,7 +16,9 @@ PARALLEL_MAX_WORKERS = int(os.environ.get("KONVERTER_MAX_WORKERS", "4"))
 PARALLEL_CHUNK_PAGES = int(os.environ.get("KONVERTER_CHUNK_PAGES", "20"))
 PARALLEL_MAX_TASKS_PER_CHILD = 8
 PARALLEL_STALL_REPORT_SECONDS = 45
-PARALLEL_STALL_FAIL_SECONDS = 180
+PARALLEL_DEGRADE_SECONDS = 90
+PARALLEL_MEMORY_GB_PER_WORKER = 0.6
+PARALLEL_MEMORY_RESERVE_GB = 1.0
 
 PDF_TABLE_SETTINGS = {
     "vertical_strategy": "lines",
@@ -109,7 +111,48 @@ def _worker_count(total_pages):
     if total_pages <= PARALLEL_MIN_PAGES:
         return 1
 
-    return max(1, min(os.cpu_count() or 1, PARALLEL_MAX_WORKERS))
+    workers = min(os.cpu_count() or 1, PARALLEL_MAX_WORKERS)
+    available_gb = _available_memory_gb()
+
+    if available_gb is not None:
+        by_memory = int((available_gb - PARALLEL_MEMORY_RESERVE_GB) / PARALLEL_MEMORY_GB_PER_WORKER)
+        workers = min(workers, max(by_memory, 1))
+
+    return max(1, workers)
+
+
+def _available_memory_gb():
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class MemoryStatusEx(ctypes.Structure):
+                _fields_ = [
+                    ("length", ctypes.c_ulong),
+                    ("memory_load", ctypes.c_ulong),
+                    ("total_phys", ctypes.c_ulonglong),
+                    ("avail_phys", ctypes.c_ulonglong),
+                    ("total_page_file", ctypes.c_ulonglong),
+                    ("avail_page_file", ctypes.c_ulonglong),
+                    ("total_virtual", ctypes.c_ulonglong),
+                    ("avail_virtual", ctypes.c_ulonglong),
+                    ("avail_ext_virtual", ctypes.c_ulonglong),
+                ]
+
+            status = MemoryStatusEx()
+            status.length = ctypes.sizeof(MemoryStatusEx)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+            return status.avail_phys / (1024 ** 3)
+
+        if os.path.exists("/proc/meminfo"):
+            with open("/proc/meminfo", "r", encoding="utf-8") as meminfo:
+                for line in meminfo:
+                    if line.startswith("MemAvailable:"):
+                        return int(line.split()[1]) / (1024 ** 2)
+
+        return None
+    except Exception:
+        return None
 
 
 def _build_chunks(total_pages):
@@ -119,12 +162,12 @@ def _build_chunks(total_pages):
     ]
 
 
-def _read_pages_sequential(input_path, total_pages, progress):
-    tables = []
-    pages_read = 0
+def _read_pages_sequential(input_path, total_pages, progress, start=0, tables=None):
+    tables = [] if tables is None else tables
+    pages_read = start
 
     with pdfplumber.open(input_path) as pdf:
-        for page in pdf.pages:
+        for page in pdf.pages[start:]:
             tables.extend(_page_tables(page))
             pages_read += 1
             _report(progress, _percent_from_pages(pages_read, total_pages), _status_message(pages_read, total_pages))
@@ -136,6 +179,7 @@ def _read_chunks_parallel(input_path, chunks, workers, total_pages, progress):
     results = {}
     pages_read = 0
     last_success = time.monotonic()
+    degraded = False
 
     executor = ProcessPoolExecutor(
         max_workers=workers,
@@ -147,7 +191,7 @@ def _read_chunks_parallel(input_path, chunks, workers, total_pages, progress):
     pending = set(futures)
 
     try:
-        while pending:
+        while pending and not degraded:
             try:
                 for future in as_completed(pending, timeout=PARALLEL_STALL_REPORT_SECONDS):
                     start, chunk_tables = future.result()
@@ -165,18 +209,38 @@ def _read_chunks_parallel(input_path, chunks, workers, total_pages, progress):
                     f"{_status_message(pages_read, total_pages)} — pembacaan melambat (±{stalled_for} detik), tetap berjalan",
                 )
 
-                if stalled_for >= PARALLEL_STALL_FAIL_SECONDS:
-                    _abort_executor(executor, pending)
-                    raise RuntimeError(
-                        f"Pembacaan PDF terhenti (tidak ada kemajuan sejak halaman {pages_read}). "
-                        f"Mesin sibuk atau kehabisan memori. Tutup aplikasi lain lalu coba lagi; "
-                        f"opsional turunkan beban dengan KONVERTER_MAX_WORKERS={max(2, workers // 2)}."
-                    )
+                if stalled_for >= PARALLEL_DEGRADE_SECONDS:
+                    degraded = True
     except BrokenProcessPool:
         _abort_executor(executor, pending)
         raise RuntimeError("Proses pembacaan PDF terhenti. Silakan coba lagi.")
+    except Exception:
+        _abort_executor(executor, pending)
+        raise
     else:
-        executor.shutdown(wait=True)
+        if degraded:
+            _abort_executor(executor, pending)
+        else:
+            executor.shutdown(wait=True)
+
+    if degraded:
+        chunk_end = dict(chunks)
+        prefix_end = 0
+
+        for start in sorted(results):
+            if start == prefix_end:
+                prefix_end = chunk_end[start]
+            else:
+                break
+
+        ordered = []
+
+        for start in sorted(results):
+            if chunk_end[start] <= prefix_end:
+                ordered.extend(results[start])
+
+        _report(progress, _percent_from_pages(prefix_end, total_pages), f"{_status_message(prefix_end, total_pages)} — beralih ke mode satu-per-satu agar pasti selesai")
+        return _read_pages_sequential(input_path, total_pages, progress, start=prefix_end, tables=ordered)
 
     ordered = []
 

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: konverter
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --worker-class gthread --timeout 0
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.0"
+      - key: KONVERTER_MAX_WORKERS
+        value: "1"
+      - key: KONVERTER_MAX_UPLOAD_MB
+        value: "128"
