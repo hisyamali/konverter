@@ -11,8 +11,8 @@ Aplikasi web (Flask) untuk mengonversi file **PDF** dan **CSV** menjadi **Excel 
 - **Progress real-time** pada modal konversi:
   - Persentase + pesan tahap (`Halaman X dari halaman Y`, `Menyusun kolom data`, `Menulis file Excel`)
   - **Perkiraan waktu tersisa** (2 baris: `± ... tersisa` / `berjalan ...`) dan total waktu saat selesai
-  - Detektor kemacetan: jika pembacaan lambat, pesan `pembacaan melambat (±N detik), tetap berjalan`; bila tidak ada kemajuan selama 3 menit, proses gagal dengan pesan jelas (tidak membeku selamanya)
-- **Paralel** untuk PDF besar (baca halaman per chunk dengan beberapa worker)
+  - Detektor kemacetan: jika pembacaan lambat, pesan `pembacaan melambat (±N detik), tetap berjalan`; bila tidak ada kemajuan selama 90 detik, proses otomatis **beralih ke mode satu-per-satu (sekuensial)** dan tetap menyelesaikan file — tidak pernah membeku atau gagal karena mesin sibuk
+- **Paralel adaptif** untuk PDF besar (baca halaman per chunk): jumlah worker dipilih otomatis berdasarkan RAM kosong dan CPU (bisa dipaksa via env)
 - **Batas unggah** konfigurasi via variabel lingkungan (default 128 MB)
 - **Pembersihan otomatis** file sementara (unggahan/pratinjau/output lama dihapus setelah 24 jam / pekerjaan selesai)
 
@@ -39,38 +39,72 @@ pip install -r requirements.txt
 ## Menjalankan
 
 ```bash
-python server.py
+python run.py
 ```
 
 Buka <http://localhost:5000>.
 
-`server.py` memakai mode stabil (tanpa reloader/debug) sehingga konversi lama tidak terputus; `run.py` tersedia untuk pengembangan (debug). Untuk pengaturan beban, lihat tabel konfigurasi di bawah.
+`run.py` berjalan dalam mode stabil (tanpa reloader/debug, threaded) sehingga konversi lama tidak terputus. Untuk pengaturan beban, lihat tabel konfigurasi di bawah.
 
 ```bash
-# contoh: kurangi beban paralel untuk mesin yang sedang sibuk
-$env:KONVERTER_MAX_WORKERS=2; python server.py   # PowerShell
-KONVERTER_MAX_WORKERS=2 python server.py          # Linux/macOS
+# contoh: paksa beban paralel lebih rendah saat mesin sibuk
+$env:KONVERTER_MAX_WORKERS=2; python run.py   # PowerShell
+KONVERTER_MAX_WORKERS=2 python run.py          # Linux/macOS
 ```
 
-> **Catatan**: karena mode `debug=True`, gunakan `python run.py` hanya untuk pengembangan.
+## Deploy Online (Render + GitHub Actions)
+
+Aplikasi ini adalah server Flask, sehingga tidak bisa di-hosting di GitHub Pages. Yang dipakai adalah **GitHub Actions** sebagai otomasi deploy, dan **Render** sebagai tempat menjalankan aplikasinya.
+
+### 1. Hubungkan repo ke Render
+
+1. Buat akun di <https://render.com> lalu **New → Blueprint**.
+2. Pilih repo `hisyamali/konverter`. Render membaca `render.yaml` dan menyiapkan web service.
+3. Buka service → **Settings → Deploy Hook**, salin URL-nya.
+
+### 2. Simpan Deploy Hook sebagai secret GitHub
+
+1. Repo GitHub → **Settings → Secrets and variables → Actions → New repository secret**.
+2. Nama: `RENDER_DEPLOY_HOOK`, nilai: URL Deploy Hook dari langkah sebelumnya.
+
+### 3. Deploy
+
+Push ke branch `main` (atau jalankan workflow **Deploy to Render** secara manual dari tab **Actions**). Alur workflow (`.github/workflows/deploy.yml`):
+
+1. **Cek kode** — install dependency, `compileall`, dan import check `create_app()`.
+2. **Deploy** — bila cek lolos, memanggil Deploy Hook Render.
+
+Aplikasi akan tersedia di `https://<nama-service>.onrender.com`.
+
+### Catatan
+
+- Produksi memakai `gunicorn` (`wsgi.py`) dengan worker `gthread` (`--threads 8`) agar polling `/progress` tetap terlayani saat `/convert` berjalan, dan `--timeout 0` agar konversi besar tidak diputus.
+- Free tier Render tidur saat idle; request pertama setelah tidur terasa lambat. RAM/CPU terbatas, sehingga konversi PDF ribuan halaman bisa lambat — atur `KONVERTER_MAX_WORKERS=1` (default di `render.yaml`).
+- Filesystem Render bersifat sementara (ephemeral); aman karena aplikasi hanya menyimpan file sementara.
 
 ## Konfigurasi
 
 | Variabel lingkungan | Default | Keterangan |
 | --- | --- | --- |
 | `KONVERTER_MAX_UPLOAD_MB` | `128` | Batas ukuran file unggahan (MB) |
-| `KONVERTER_MAX_WORKERS` | `4` | Jumlah worker paralel untuk PDF besar (1–8). Kurangi jika mesin sibuk, naikkan jika ingin lebih cepat |
+| `KONVERTER_MAX_WORKERS` | `4` | Batas atas worker paralel untuk PDF besar (1–8). Worker aktual dipilih otomatis (CPU + RAM kosong); paksakan dengan nilai ini untuk mengendalikan beban |
 | `KONVERTER_CHUNK_PAGES` | `20` | Halaman per tugas worker |
 
-Pedoman kecepatan (terukur pada i5-11400H, Windows): ±0,55–0,65 dtk/halaman single-thread. Dengan `KONVERTER_MAX_WORKERS=4` (default) file 4679 halaman ±**15–26 menit**; tutup aplikasi berat lalu pakai 6–8 worker untuk hasil ±**10–15 menit**.
+> **Worker adaptif**: jumlah worker dipilih otomatis setiap konversi = min(`KONVERTER_MAX_WORKERS`, CPU, RAM kosong menyesuaikan). Bila mesin sibuk (RAM menipis), aplikasi memakai lebih sedikit worker sehingga tidak thrash; bila paralel tetap macet >90 detik, otomatis lanjut sekuensial dan **tetap selesai**.
+
+Pedoman kecepatan (terukur pada i5-11400H, Windows): ±0,55–0,65 dtk/halaman single-thread. Dengan worker adaptif (3–4) pada mesin dengan RAM cukup, file 4679 halaman ±**15–26 menit**; tutup aplikasi berat (browser/IDE) agar RAM kosong naik → worker lebih banyak → mendekati **±12–15 menit**.
 
 ## Struktur Proyek
 
 ```
 konverter/
-├── run.py                  # Entry point (pengembangan, debug)
-├── server.py               # Entry point stabil (tanpa reloader)
+├── run.py                  # Entry point aplikasi (mode stabil, tanpa reloader) — dev lokal
+├── wsgi.py                 # Entry point produksi (gunicorn)
+├── render.yaml             # Blueprint deploy Render
 ├── requirements.txt
+├── .github/
+│   └── workflows/
+│       └── deploy.yml      # GitHub Actions: cek kode → deploy ke Render
 ├── app/
 │   ├── __init__.py         # create_app(), konfigurasi folder
 │   ├── routes.py           # Endpoint /, /preview, /convert, /progress
@@ -116,9 +150,10 @@ Status pekerjaan konversi.
 ## Detail Teknis Konversi PDF
 
 - Ekstraksi tabel memakai `pdfplumber` dengan `PDF_TABLE_SETTINGS` (strategi *lines*, `snap_xtolerance`) untuk hasil yang konsisten pada laporan mutasi bank.
-- Halaman diproses per proses workers (`PARALLEL_MAX_WORKERS=8`, `PARALLEL_CHUNK_PAGES=20`) untuk file lebih dari `PARALLEL_MIN_PAGES` halaman.
+- Halaman dibaca per chunk oleh beberapa worker (`PARALLEL_CHUNK_PAGES=20`, batas `PARALLEL_MAX_WORKERS=4` via `KONVERTER_MAX_WORKERS`) untuk file lebih dari `PARALLEL_MIN_PAGES` halaman; jumlah worker aktual disesuaikan otomatis dengan RAM kosong mesin.
+- Bila tidak ada kemajuan selama `PARALLEL_DEGRADE_SECONDS=90` detik, proses beralih ke pembacaan sekuensial untuk sisa halaman (menjamin selesai meski mesin sibuk).
 - Perkiraan waktu konversi dikalibrasi dengan mengukur kecepatan ekstraksi blok halaman sekuensial pada pratinjau.
-- Pada mesin ini kecepatan baca terukur ±0,55–0,65 detik/halaman single-thread; dengan 4 worker sejajar file 4679 halaman selesai ±15–26 menit, atau ±10–15 menit dengan 6–8 worker bila aplikasi berat ditutup.
+- Pada mesin ini kecepatan baca terukur ±0,55–0,65 detik/halaman single-thread; file 4679 halaman ≈ 2800 detik CPU — dengan worker adaptif 3–4 dan mesin cukup bebas selesai ±15–26 menit.
 
 ## Menghapus Cache / File Sementara
 
@@ -146,5 +181,5 @@ Get-ChildItem -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse  # 
 
 ## Pemecahan Masalah
 
-- **Konversi terasa lambat / progress diam lama**: kemungkinan kompetisi CPU atau pemindaian antivirus (mis. Windows Defender) pada folder proyek. Tambahkan folder proyek ke pengecualian real-time antivirus untuk hasil terbaik.
+- **Konversi terasa lambat / progress diam lama**: aplikasi otomatis menurunkan worker atau beralih ke mode sekuensial, jadi proses akan tetap berjalan (hanya lebih pelan). Untuk mempercepat, tutup aplikasi berat (browser/VS Code) saat konversi agar RAM kosong naik. Kompetisi CPU atau pemindaian antivirus (mis. Windows Defender) juga bisa menahan; tambahkan folder proyek ke pengecualian real-time antivirus untuk hasil terbaik.
 - **Unggah ditolak**: pastikan jenis file sesuai dengan jenis konversi yang dipilih dan ukurannya di bawah `KONVERTER_MAX_UPLOAD_MB`.
