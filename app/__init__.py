@@ -1,3 +1,5 @@
+"""Membuat dan mengonfigurasi instance Flask utama aplikasi konverter."""
+
 import os
 from pathlib import Path
 from pandas import DataFrame
@@ -7,6 +9,7 @@ from app.routes import main_bp
 
 
 def create_app():
+    """Siapkan konfigurasi upload/output, folder storage, dan blueprint route."""
     app = Flask(__name__)
     app.config["SECRET_KEY"] = "change-this-secret-key"
 

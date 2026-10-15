@@ -1,3 +1,5 @@
+"""Logika baca file, pratinjau, normalisasi data, dan konversi PDF/CSV ke Excel."""
+
 import csv
 import math
 import os
@@ -32,6 +34,7 @@ _WORKER_PDF = None
 
 
 def convert_csv_to_excel(input_path, output_path, progress=None):
+    """Baca CSV, normalisasi angka nominal, lalu tulis sebagai file Excel."""
     _report(progress, 12, "Membaca file CSV")
     dataframe = _read_csv(input_path)
 
@@ -49,6 +52,7 @@ def convert_csv_to_excel(input_path, output_path, progress=None):
 
 
 def _write_excel(dataframe, output_path, sheet_name="Sheet1", include_header=True):
+    """Tulis DataFrame ke workbook Excel write-only agar hemat memori untuk file besar."""
     workbook = Workbook(write_only=True)
     sheet = workbook.create_sheet(sheet_name)
 
@@ -62,6 +66,7 @@ def _write_excel(dataframe, output_path, sheet_name="Sheet1", include_header=Tru
 
 
 def convert_pdf_to_excel(input_path, output_path, progress=None, total_pages=None):
+    """Ekstrak semua tabel PDF, rapikan header berulang, lalu ekspor ke Excel."""
     if total_pages is None:
         _report(progress, 6, "Membuka file PDF")
 
@@ -89,6 +94,7 @@ def convert_pdf_to_excel(input_path, output_path, progress=None, total_pages=Non
 
 
 def _collect_pdf_tables(input_path, progress, total_pages=None):
+    """Kumpulkan tabel PDF secara sekuensial atau paralel sesuai jumlah halaman."""
     if total_pages is None:
         total_pages = _count_pages(input_path)
 
@@ -103,11 +109,13 @@ def _collect_pdf_tables(input_path, progress, total_pages=None):
 
 
 def _count_pages(input_path):
+    """Hitung jumlah halaman PDF sebelum proses ekstraksi berjalan."""
     with pdfplumber.open(input_path) as pdf:
         return len(pdf.pages)
 
 
 def _worker_count(total_pages):
+    """Tentukan jumlah worker paralel berdasarkan halaman, CPU, dan memori kosong."""
     if total_pages <= PARALLEL_MIN_PAGES:
         return 1
 
@@ -122,6 +130,7 @@ def _worker_count(total_pages):
 
 
 def _available_memory_gb():
+    """Ambil estimasi RAM tersedia di Windows atau Linux untuk membatasi worker."""
     try:
         if os.name == "nt":
             import ctypes
@@ -156,6 +165,7 @@ def _available_memory_gb():
 
 
 def _build_chunks(total_pages):
+    """Bagi halaman PDF menjadi rentang kecil untuk diproses worker paralel."""
     return [
         (start, min(start + PARALLEL_CHUNK_PAGES, total_pages))
         for start in range(0, total_pages, PARALLEL_CHUNK_PAGES)
@@ -163,6 +173,7 @@ def _build_chunks(total_pages):
 
 
 def _read_pages_sequential(input_path, total_pages, progress, start=0, tables=None):
+    """Baca halaman PDF satu per satu, digunakan untuk file kecil atau fallback aman."""
     tables = [] if tables is None else tables
     pages_read = start
 
@@ -176,6 +187,7 @@ def _read_pages_sequential(input_path, total_pages, progress, start=0, tables=No
 
 
 def _read_chunks_parallel(input_path, chunks, workers, total_pages, progress):
+    """Baca chunk PDF dengan banyak proses dan turun ke mode sekuensial jika macet."""
     results = {}
     pages_read = 0
     last_success = time.monotonic()
@@ -251,6 +263,7 @@ def _read_chunks_parallel(input_path, chunks, workers, total_pages, progress):
 
 
 def _abort_executor(executor, pending):
+    """Batalkan pekerjaan paralel yang tersisa saat perlu fallback atau terjadi error."""
     for future in pending:
         future.cancel()
 
@@ -261,16 +274,19 @@ def _abort_executor(executor, pending):
 
 
 def _init_pdf_worker(pdf_path):
+    """Buka PDF sekali di tiap worker agar setiap task tidak membuka file ulang."""
     global _WORKER_PDF
     _WORKER_PDF = pdfplumber.open(pdf_path)
 
 
 def _extract_chunk_task(chunk):
+    """Wrapper task worker untuk mengembalikan posisi chunk dan hasil tabelnya."""
     start, end = chunk
     return start, _extract_chunk(_WORKER_PDF, start, end)
 
 
 def _page_tables(page):
+    """Ekstrak dan bersihkan semua tabel yang ditemukan pada satu halaman PDF."""
     tables = []
 
     for table in page.extract_tables(PDF_TABLE_SETTINGS):
@@ -283,6 +299,7 @@ def _page_tables(page):
 
 
 def _extract_chunk(pdf, start, end):
+    """Ekstrak tabel dari rentang halaman PDF tertentu."""
     tables = []
 
     for page in pdf.pages[start:end]:
@@ -292,14 +309,17 @@ def _extract_chunk(pdf, start, end):
 
 
 def _percent_from_pages(pages_read, total_pages):
+    """Ubah jumlah halaman terbaca menjadi persentase progress tahap ekstraksi."""
     return 8 + int(76 * pages_read / max(total_pages, 1))
 
 
 def _status_message(pages_read, total_pages):
+    """Buat pesan progress pembacaan halaman untuk frontend."""
     return f"Halaman {pages_read} dari halaman {total_pages}"
 
 
 def _report(progress, percent, message):
+    """Panggil callback progress jika pemanggil menyediakannya."""
     if progress is None:
         return
 
@@ -311,6 +331,7 @@ PREVIEW_PDF_TABLE_ROWS = 5
 
 
 def preview_csv_file(path):
+    """Buat ringkasan CSV: jumlah baris/kolom, header, dan sampel baris."""
     dataframe = _read_csv(path)
 
     if dataframe.empty:
@@ -331,6 +352,7 @@ PREVIEW_TIMED_PAGES = 5
 
 
 def preview_pdf_file(path):
+    """Buat ringkasan PDF: jumlah halaman, sampel tabel, dan estimasi durasi."""
     with pdfplumber.open(path) as pdf:
         page_count = len(pdf.pages)
 
@@ -374,10 +396,12 @@ def preview_pdf_file(path):
 
 
 def _json_rows(row):
+    """Konversi satu baris data menjadi list nilai yang aman untuk JSON."""
     return [_json_value(value) for value in row]
 
 
 def _json_value(value):
+    """Normalisasi nilai pandas/numpy agar bisa dikirim lewat JSON."""
     if value is None:
         return None
 
@@ -397,6 +421,7 @@ def _json_value(value):
 
 
 def _read_csv(input_path):
+    """Baca CSV dengan parser khusus transaksi terlebih dahulu, lalu parser umum."""
     table = _read_transaction_csv(input_path)
     if table is not None:
         return table
@@ -405,6 +430,7 @@ def _read_csv(input_path):
 
 
 def _read_generic_csv(input_path):
+    """Baca CSV umum dengan deteksi delimiter dan fallback encoding latin-1."""
     if not _has_content(input_path):
         return pd.DataFrame()
 
@@ -426,6 +452,7 @@ def _read_generic_csv(input_path):
 
 
 def _has_content(input_path):
+    """Cek apakah file berisi karakter non-whitespace sebelum dibaca pandas."""
     whitespace = b"\x00\r\n\t "
     try:
         with open(input_path, "rb") as file:
@@ -442,6 +469,7 @@ def _has_content(input_path):
 
 
 def _sniff_delimiter(input_path):
+    """Deteksi delimiter koma atau titik koma dari sampel awal file."""
     try:
         with open(input_path, "rb") as file:
             sample = file.read(8192)
@@ -482,6 +510,7 @@ def _sniff_delimiter(input_path):
 
 
 def _count_unquoted(line, character):
+    """Hitung separator di luar tanda kutip agar CSV quoted tidak salah deteksi."""
     count = 0
     in_quotes = False
     index = 0
@@ -505,6 +534,7 @@ def _count_unquoted(line, character):
 
 
 def _read_transaction_csv(input_path):
+    """Baca CSV laporan transaksi yang punya metadata sebelum header tabel utama."""
     lines = _read_text_lines(input_path)
 
     if not lines:
@@ -532,6 +562,7 @@ def _read_transaction_csv(input_path):
 
 
 def _read_text_lines(input_path):
+    """Baca seluruh file teks dengan encoding UTF-8 BOM atau latin-1."""
     for encoding in ("utf-8-sig", "latin-1"):
         try:
             with open(input_path, encoding=encoding, newline="") as file:
@@ -543,6 +574,7 @@ def _read_text_lines(input_path):
 
 
 def _find_transaction_header(lines):
+    """Cari baris header transaksi berdasarkan kolom kunci seperti tanggal/keterangan."""
     for index, line in enumerate(lines):
         for delimiter in (",", ";"):
             columns = next(csv.reader([line], delimiter=delimiter))
@@ -555,6 +587,7 @@ def _find_transaction_header(lines):
 
 
 def _fit_csv_row(row, column_count):
+    """Sesuaikan jumlah kolom CSV, termasuk menggabungkan deskripsi yang terpecah."""
     row = [cell.strip() for cell in row]
 
     if len(row) == column_count:
@@ -569,6 +602,7 @@ def _fit_csv_row(row, column_count):
 
 
 def _clean_table(table):
+    """Buang baris kosong dan rapikan spasi sel hasil ekstraksi PDF."""
     cleaned_rows = []
 
     for row in table:
@@ -583,6 +617,7 @@ def _clean_table(table):
 
 
 def _append_table_without_duplicate_header(table, header, rows):
+    """Gabungkan tabel PDF sambil menghindari header yang berulang di tiap halaman."""
     current_header = table[0]
 
     if header is None:
@@ -593,14 +628,17 @@ def _append_table_without_duplicate_header(table, header, rows):
 
 
 def _same_row(first_row, second_row):
+    """Bandingkan dua baris setelah case dan spasi dinormalisasi."""
     return _normalize_row(first_row) == _normalize_row(second_row)
 
 
 def _normalize_row(row):
+    """Ubah baris menjadi bentuk pembanding yang lowercase dan satu spasi."""
     return [" ".join(cell.lower().split()) for cell in row]
 
 
 def _normalize_table(table):
+    """Samakan panjang semua baris tabel agar bisa dibuat DataFrame."""
     max_columns = max(len(row) for row in table)
     return [row + [""] * (max_columns - len(row)) for row in table]
 
@@ -612,6 +650,7 @@ _TOKEN_SEPARATOR = re.compile(r"[\n\r\t ]")
 
 
 def _normalize_nominal_values(dataframe):
+    """Konversi kolom nominal ke angka tanpa mengubah kolom yang terlihat seperti ID."""
     for column in dataframe.columns:
         series = dataframe[column]
 
@@ -624,6 +663,7 @@ def _normalize_nominal_values(dataframe):
 
 
 def _has_identifier_value(series):
+    """Deteksi kolom berisi nomor identitas/rekening agar tidak diperlakukan angka nominal."""
     cleaned = _clean_series_token(series)
     return bool(
         cleaned.str.fullmatch(_IDENTIFIER_PLAIN.pattern, na=False).any()
@@ -632,12 +672,14 @@ def _has_identifier_value(series):
 
 
 def _clean_series_token(series):
+    """Bersihkan token kolom dari whitespace dan tanda debit/kredit untuk analisis angka."""
     cleaned = series.map(lambda value: "" if value is None else str(value))
     cleaned = cleaned.str.strip().str.replace(_TOKEN_SEPARATOR.pattern, "", regex=True).str.rstrip("CDcd")
     return cleaned.mask(cleaned.isin(["-", "--", ".", ","]), "")
 
 
 def _normalize_nominal_column(series):
+    """Normalisasi satu kolom nilai nominal sambil mempertahankan nilai non-angka."""
     values = series.tolist()
     cleaned = _clean_series_token(series).tolist()
     result = []
@@ -655,6 +697,7 @@ def _normalize_nominal_column(series):
 
 
 def _to_simple_integer(token):
+    """Konversi token integer sederhana, kembalikan None jika tidak valid."""
     try:
         return int(token)
     except (ValueError, TypeError):
@@ -662,6 +705,7 @@ def _to_simple_integer(token):
 
 
 def _normalize_cell(value):
+    """Konversi satu sel nominal ke int/float jika formatnya dapat dikenali."""
     if value is None:
         return None
 
@@ -675,6 +719,7 @@ def _normalize_cell(value):
 
 
 def _clean_number_token(value):
+    """Rapikan teks angka dari spasi, newline, dan suffix CD sebelum parsing."""
     token = str(value).strip()
     token = token.replace("\n", " ").replace("\r", " ").replace("\t", " ")
     token = token.replace(" ", "")
@@ -687,6 +732,7 @@ def _clean_number_token(value):
 
 
 def _to_number(value):
+    """Parse format angka Indonesia/umum menjadi int atau float."""
     token = _clean_number_token(value)
 
     if not token:
@@ -714,5 +760,6 @@ def _to_number(value):
 
 
 def _to_integral(number):
+    """Kembalikan int jika Decimal bulat, selain itu float."""
     integral = number.to_integral_value()
     return int(integral) if number == integral else float(number)

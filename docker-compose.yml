@@ -1,0 +1,9 @@
+services:
+  konverter:
+    build: .
+    image: ghcr.io/hisyamali/konverter:latest
+    ports:
+      - "5000:7860"
+    environment:
+      - KONVERTER_MAX_WORKERS=2
+      - KONVERTER_MAX_UPLOAD_MB=128

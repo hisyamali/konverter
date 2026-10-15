@@ -1,4 +1,5 @@
 :root {
+    /* Tema dasar aplikasi: warna light mode dan font global. */
     color-scheme: light;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: #f4f7fb;
@@ -10,6 +11,7 @@
 }
 
 body {
+    /* Latar lembut untuk memberi kedalaman tanpa mengganggu area kerja utama. */
     margin: 0;
     min-height: 100vh;
     background:
@@ -18,16 +20,18 @@ body {
 }
 
 .page-shell {
+    /* Pembungkus halaman agar konten tetap berada di tengah dan punya gutter responsif. */
     width: min(1100px, calc(100% - 32px));
     margin: 0 auto;
     padding: 48px 0;
 }
 
 .hero-card {
+    /* Layout utama: teks keterangan di atas, form konversi tepat di bawahnya. */
     display: grid;
-    grid-template-columns: 1.15fr 0.85fr;
-    gap: 32px;
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
     min-height: 520px;
     padding: 42px;
     border-radius: 34px;
@@ -36,7 +40,14 @@ body {
     backdrop-filter: blur(18px);
 }
 
+.hero-copy,
+.converter-card {
+    /* Mencegah konten panjang seperti tabel pratinjau memaksa layout melebar. */
+    min-width: 0;
+}
+
 .eyebrow {
+    /* Label kecil di atas judul untuk memberi konteks jenis aplikasi. */
     width: fit-content;
     margin: 0 0 18px;
     padding: 8px 14px;
@@ -50,14 +61,16 @@ body {
 }
 
 h1 {
-    max-width: 680px;
+    /* Judul besar sebagai fokus visual halaman. */
+    max-width: 760px;
     margin: 0;
-    font-size: clamp(2.35rem, 7vw, 5rem);
-    line-height: 0.94;
-    letter-spacing: -0.07em;
+    font-size: clamp(2.35rem, 6vw, 4.8rem);
+    line-height: 0.96;
+    letter-spacing: -0.06em;
 }
 
 .description {
+    /* Deskripsi singkat alur penggunaan aplikasi. */
     max-width: 540px;
     margin: 24px 0 0;
     color: #5d6b82;
@@ -66,8 +79,12 @@ h1 {
 }
 
 .converter-card {
+    /* Kartu form unggah, pratinjau, dan tombol konversi. */
     display: grid;
     gap: 14px;
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
     padding: 26px;
     border: 1px solid #e5ebf5;
     border-radius: 26px;
@@ -76,6 +93,7 @@ h1 {
 }
 
 label {
+    /* Label form dibuat tebal agar mudah dipindai. */
     color: #23324a;
     font-size: 0.9rem;
     font-weight: 800;
@@ -83,6 +101,7 @@ label {
 
 select,
 input[type="file"] {
+    /* Kontrol input dibuat konsisten dengan gaya kartu. */
     width: 100%;
     min-height: 52px;
     padding: 13px 14px;
@@ -94,6 +113,8 @@ input[type="file"] {
 }
 
 button {
+    /* Tombol aksi utama untuk memulai konversi. */
+    width: 100%;
     min-height: 56px;
     margin-top: 8px;
     border: 0;
@@ -111,6 +132,7 @@ button:hover {
 }
 
 .alerts {
+    /* Wadah pesan notifikasi jika ada status umum yang perlu ditampilkan. */
     display: grid;
     gap: 10px;
 }
@@ -128,6 +150,7 @@ button:hover {
 }
 
 .feature-grid {
+    /* Kartu fitur pendukung di bawah hero. */
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 18px;
@@ -158,6 +181,7 @@ button:hover {
 }
 
 .loading-overlay {
+    /* Lapisan modal yang mengunci fokus saat proses konversi berjalan. */
     position: fixed;
     inset: 0;
     z-index: 50;
@@ -178,6 +202,7 @@ button:hover {
 }
 
 .loading-panel {
+    /* Panel putih di tengah overlay untuk progress dan error. */
     width: min(430px, 100%);
     padding: 26px;
     border-radius: 26px;
@@ -213,6 +238,7 @@ button:hover {
 }
 
 .progress-track {
+    /* Track progress bar konversi. */
     height: 12px;
     overflow: hidden;
     border-radius: 999px;
@@ -220,6 +246,7 @@ button:hover {
 }
 
 .progress-bar {
+    /* Bar biru yang lebarnya diubah JavaScript sesuai progress. */
     width: 0;
     height: 100%;
     border-radius: inherit;
@@ -266,6 +293,7 @@ button:hover {
 }
 
 .steps {
+    /* Indikator dua langkah: pratinjau lalu konversi. */
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
@@ -307,6 +335,7 @@ button:hover {
 }
 
 .preview-status {
+    /* Status upload/pratinjau sebelum panel sampel tampil. */
     margin: 0;
     padding: 12px 14px;
     border-radius: 14px;
@@ -322,11 +351,15 @@ button:hover {
 }
 
 .preview-panel {
+    /* Panel hasil pratinjau file yang diisi dari response server. */
     display: grid;
-    gap: 10px;
+    gap: 12px;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .preview-meta {
+    /* Metadata pratinjau seperti nama file, ukuran, dan jumlah halaman/baris. */
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -346,6 +379,11 @@ button:hover {
     overflow-wrap: anywhere;
 }
 
+.preview-badge[hidden] {
+    /* Badge nama file hanya muncul setelah user mengunggah file. */
+    display: none;
+}
+
 .preview-facts {
     color: #5d6b82;
     font-size: 0.84rem;
@@ -360,14 +398,23 @@ button:hover {
 }
 
 .preview-table-scroll {
+    /* Area scroll agar tabel lebar tidak merusak layout halaman. */
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
     max-height: 300px;
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
     border: 1px solid #e5ebf5;
     border-radius: 14px;
+    background: #ffffff;
 }
 
 .preview-table {
+    /* Tabel sampel dibuat cukup lebar supaya data transaksi tetap terbaca. */
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: 0.82rem;
 }
@@ -383,6 +430,8 @@ button:hover {
     background: #eef2f9;
     color: #23324a;
     font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-align: left;
     white-space: nowrap;
 }
@@ -391,6 +440,8 @@ button:hover {
     padding: 8px 10px;
     border-top: 1px solid #eef2f7;
     color: #33415a;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
@@ -401,6 +452,7 @@ button:hover {
 }
 
 @media (max-width: 780px) {
+    /* Tampilan mobile: semua section menjadi satu kolom dan spacing dipadatkan. */
     .page-shell {
         width: min(100% - 22px, 560px);
         padding: 18px 0;
@@ -415,6 +467,14 @@ button:hover {
 
     .converter-card {
         padding: 18px;
+    }
+
+    h1 {
+        max-width: 100%;
+    }
+
+    .steps {
+        grid-template-columns: 1fr;
     }
 
     .feature-grid {
