@@ -6,17 +6,20 @@
     <meta name="theme-color" content="#16213e">
     <title>Konverter PDF/CSV ke Excel</title>
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261015-hide-badge">
 </head>
 <body>
     <main class="page-shell">
+        <!-- Hero utama: menjelaskan fungsi aplikasi dan menampung form konversi. -->
         <section class="hero-card">
+            <!-- Copy pemasaran singkat agar user tahu hasil yang akan didapat. -->
             <div class="hero-copy">
                 <p class="eyebrow">Web & Mobile Converter</p>
                 <h1>Ubah PDF atau CSV menjadi Excel dalam beberapa detik.</h1>
                 <p class="description">Upload file, lihat pratinjau, lalu konversi dan download hasilnya sebagai file .xlsx.</p>
             </div>
 
+            <!-- Form 2 langkah: unggah/pratinjau terlebih dahulu, lalu konversi ke Excel. -->
             <div class="converter-card">
                 <ol class="steps" aria-label="Langkah">
                     <li id="step-upload" class="step is-active"><span>1</span> Unggah &amp; pratinjau</li>
@@ -33,9 +36,10 @@
                 <input id="file" type="file" name="file" accept=".csv,.pdf" required>
                 <p id="preview-status" class="preview-status" hidden></p>
 
-                <div id="preview-panel" class="!preview-panel" hidden>
+                <!-- Panel pratinjau diisi JavaScript setelah server berhasil membaca sampel file. -->
+                <div id="preview-panel" class="preview-panel" hidden>
                     <div class="preview-meta">
-                        <span id="preview-filename" class="preview-badge preview-badge-file"></span>
+                        <span id="preview-filename" class="preview-badge preview-badge-file" hidden></span>
                         <span id="preview-facts" class="preview-facts"></span>
                     </div>
                     <p id="preview-estimate" class="preview-estimate" hidden></p>
@@ -56,6 +60,7 @@
             </div>
         </section>
 
+        <!-- Ringkasan fitur agar user memahami jenis file dan alur yang didukung. -->
         <section class="feature-grid" aria-label="Fitur aplikasi">
             <article>
                 <span>01</span>
@@ -75,6 +80,7 @@
         </section>
     </main>
 
+    <!-- Overlay progress konversi: ditampilkan selama proses berjalan dan saat terjadi error. -->
     <div id="loading-overlay" class="loading-overlay" hidden>
         <div class="loading-panel" role="dialog" aria-modal="true" aria-labelledby="loading-title">
             <h2 id="loading-title" class="loading-title">Memproses file</h2>

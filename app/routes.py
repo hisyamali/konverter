@@ -1,3 +1,5 @@
+"""Route HTTP untuk halaman utama, pratinjau file, konversi, dan polling progress."""
+
 import io
 import re
 import time
@@ -29,11 +31,13 @@ EXCEL_MIMETYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sh
 
 @main_bp.get("/")
 def index():
+    """Tampilkan halaman utama konverter."""
     return render_template("index.html")
 
 
 @main_bp.get("/progress")
 def progress_status():
+    """Kirim status progress konversi agar frontend bisa memperbarui progress bar."""
     job_id = request.args.get("job_id", "").strip()
     job = get_job(job_id)
 
@@ -45,6 +49,7 @@ def progress_status():
 
 @main_bp.post("/preview")
 def preview():
+    """Validasi upload, simpan sementara, lalu kirim data pratinjau ke frontend."""
     conversion_type = request.form.get("conversion_type", "").strip()
     uploaded_file = request.files.get("file")
 
@@ -100,6 +105,7 @@ def preview():
 
 @main_bp.post("/convert")
 def convert():
+    """Konversi file yang sudah dipratinjau menjadi Excel dan kirim hasil download."""
     job_id = request.form.get("job_id", "").strip() or uuid4().hex
     preview_id = request.form.get("preview_id", "").strip()
 
@@ -148,6 +154,7 @@ def convert():
 
 
 def _cleanup(*paths):
+    """Hapus file sementara tanpa menggagalkan request jika file sudah tidak ada."""
     for path in paths:
         try:
             path.unlink(missing_ok=True)
@@ -156,12 +163,14 @@ def _cleanup(*paths):
 
 
 def _sweep_stale():
+    """Bersihkan file upload/output lama agar storage tidak menumpuk."""
     app = current_app
     sweep_old_files(app.config["UPLOAD_FOLDER"])
     sweep_old_files(app.config["OUTPUT_FOLDER"])
 
 
 def _build_progress(job_id):
+    """Buat callback progress yang menghitung ETA lalu menyimpannya ke job store."""
     started = time.monotonic()
     state = {"eta": None, "phase": None, "phase_started": 0.0, "phase_percent": 0}
 
@@ -186,6 +195,7 @@ _PAGE_PROGRESS_RE = re.compile(r"Halaman (\d+) dari halaman (\d+)")
 
 
 def _phase_key(message):
+    """Kelompokkan pesan progress ke fase besar untuk perhitungan ETA yang stabil."""
     if not message:
         return None
 
@@ -202,6 +212,7 @@ def _phase_key(message):
 
 
 def _estimate_eta(percent, elapsed, message, state):
+    """Hitung sisa waktu berdasarkan halaman PDF atau kenaikan persentase fase."""
     if percent <= 0 or percent >= 100:
         return None
 
@@ -230,6 +241,7 @@ def _estimate_eta(percent, elapsed, message, state):
 
 
 def _reject(message, job_id=None):
+    """Kirim error JSON dan tandai job gagal bila request terkait proses konversi."""
     if job_id and get_job(job_id) is None:
         create_job(job_id, "Memvalidasi file")
 
@@ -241,5 +253,6 @@ def _reject(message, job_id=None):
 
 @main_bp.app_errorhandler(413)
 def file_too_large(_error):
+    """Berikan pesan jelas saat ukuran upload melewati batas konfigurasi."""
     limit_mb = current_app.config.get("MAX_UPLOAD_MB", 128)
     return jsonify({"error": f"Ukuran file melebihi batas {limit_mb} MB."}), 413

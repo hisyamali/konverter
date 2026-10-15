@@ -1,3 +1,5 @@
+"""Penyimpanan progress konversi sementara berbasis memori untuk polling frontend."""
+
 import threading
 import time
 
@@ -8,6 +10,7 @@ _jobs = {}
 
 
 def create_job(job_id, message="Menyiapkan file"):
+    """Daftarkan job baru dengan status awal 0 persen."""
     with _lock:
         _purge_expired()
         _jobs[job_id] = {
@@ -24,6 +27,7 @@ def create_job(job_id, message="Menyiapkan file"):
 
 
 def update_job(job_id, percent, message=None, eta_seconds=None):
+    """Perbarui persentase, pesan, dan estimasi sisa waktu sebuah job."""
     if not job_id:
         return
 
@@ -42,6 +46,7 @@ def update_job(job_id, percent, message=None, eta_seconds=None):
 
 
 def get_job(job_id):
+    """Ambil snapshot status job dalam format yang aman dikirim sebagai JSON."""
     with _lock:
         job = _jobs.get(job_id)
 
@@ -59,6 +64,7 @@ def get_job(job_id):
 
 
 def finish_job(job_id, error=None):
+    """Tandai job selesai, baik berhasil maupun gagal dengan pesan error."""
     if not job_id:
         return
 
@@ -80,6 +86,7 @@ def finish_job(job_id, error=None):
 
 
 def _purge_expired():
+    """Hapus status job lama supaya memori tidak terus bertambah."""
     now = time.time()
     expired = [
         key

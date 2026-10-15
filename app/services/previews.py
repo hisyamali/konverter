@@ -1,3 +1,5 @@
+"""Registry pratinjau upload sementara sebelum file benar-benar dikonversi."""
+
 import threading
 import time
 from pathlib import Path
@@ -9,6 +11,7 @@ _previews = {}
 
 
 def register_preview(preview_id, path, original_name, conversion_type, meta=None):
+    """Simpan metadata file yang sudah lolos pratinjau untuk dipakai saat konversi."""
     with _lock:
         _purge_expired()
         _previews[preview_id] = {
@@ -23,6 +26,7 @@ def register_preview(preview_id, path, original_name, conversion_type, meta=None
 
 
 def get_preview(preview_id):
+    """Ambil metadata pratinjau jika ID masih valid dan file fisiknya masih ada."""
     if not preview_id:
         return None
 
@@ -41,6 +45,7 @@ def get_preview(preview_id):
 
 
 def delete_preview(preview_id):
+    """Hapus metadata pratinjau sekaligus file upload sementaranya."""
     with _lock:
         preview = _previews.pop(preview_id, None)
 
@@ -52,6 +57,7 @@ def delete_preview(preview_id):
 
 
 def sweep_old_files(folder, max_age_seconds=PREVIEW_MAX_AGE_SECONDS):
+    """Bersihkan file lama di folder storage tanpa menghapus file penjaga .gitkeep."""
     try:
         folder_iter = list(folder.iterdir())
     except OSError:
@@ -74,6 +80,7 @@ def sweep_old_files(folder, max_age_seconds=PREVIEW_MAX_AGE_SECONDS):
 
 
 def _purge_expired():
+    """Hapus entri pratinjau yang melewati masa berlaku 24 jam."""
     now = time.time()
     expired = [
         key

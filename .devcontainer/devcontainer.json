@@ -1,0 +1,12 @@
+{
+  "name": "Konverter (Codespaces)",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "forwardPorts": [5000],
+  "portsAttributes": {
+    "5000": {
+      "label": "Konverter Web",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    }
+  }
+}

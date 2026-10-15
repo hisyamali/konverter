@@ -1,0 +1,16 @@
+.git
+.github
+venv
+__pycache__
+*.pyc
+*.pyo
+storage/*
+!storage/.gitkeep
+.ruff_cache
+.*cache*
+*.log
+tempCodeRunnerFile.py
+README.md
+docker-compose.yml
+.dockerignore
+Dockerfile

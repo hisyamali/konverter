@@ -52,35 +52,67 @@ $env:KONVERTER_MAX_WORKERS=2; python run.py   # PowerShell
 KONVERTER_MAX_WORKERS=2 python run.py          # Linux/macOS
 ```
 
-## Deploy Online (Render + GitHub Actions)
+## Menjalankan dengan Docker
 
-Aplikasi ini adalah server Flask, sehingga tidak bisa di-hosting di GitHub Pages. Yang dipakai adalah **GitHub Actions** sebagai otomasi deploy, dan **Render** sebagai tempat menjalankan aplikasinya.
+```bash
+docker compose up --build
+```
 
-### 1. Hubungkan repo ke Render
+Buka <http://localhost:5000>. Produksi memakai `gunicorn` (`wsgi.py`) dengan worker `gthread` (`--threads 8`) agar polling `/progress` tetap terlayani saat `/convert` berjalan, dan `--timeout 0` agar konversi besar tidak diputus. Aplikasi menyimpan file sementara di filesystem kontainer (ephemeral) — aman karena file otomatis dibersihkan.
 
-1. Buat akun di <https://render.com> lalu **New → Blueprint**.
-2. Pilih repo `hisyamali/konverter`. Render membaca `render.yaml` dan menyiapkan web service.
-3. Buka service → **Settings → Deploy Hook**, salin URL-nya.
+## Akses Online (GitHub Codespaces)
 
-### 2. Simpan Deploy Hook sebagai secret GitHub
+Aplikasi ini adalah **server Flask**, sehingga tidak bisa di-hosting di GitHub Pages. Cara gratis tanpa kartu untuk mengaksesnya online adalah **GitHub Codespaces**:
 
-1. Repo GitHub → **Settings → Secrets and variables → Actions → New repository secret**.
-2. Nama: `RENDER_DEPLOY_HOOK`, nilai: URL Deploy Hook dari langkah sebelumnya.
+1. Buka repo di GitHub → tombol **`<> Code`** → tab **Codespaces** → **Create codespace on main**.
+2. Terminal muncul otomatis; jalankan:
+   ```bash
+   docker compose up --build
+   ```
+3. Buka tab **Ports**, cari port **5000** (label *Konverter Web*), klik kanan → **Port Visibility → Public**.
+4. Dapatkan URL publik seperti `https://<nama-codespace>-5000.app.github.dev` dan bagikan.
 
-### 3. Deploy
+> URL hanya aktif **selama sesi Codespace berjalan** (bukan permanen; sesi berhenti saat idle/tertutup). Untuk akses permanen dengan resource besar, gunakan VPS atau hosting Docker berbayar.
 
-Push ke branch `main` (atau jalankan workflow **Deploy to Render** secara manual dari tab **Actions**). Alur workflow (`.github/workflows/deploy.yml`):
+## Image Docker di GitHub Container Registry (GHCR)
 
-1. **Cek kode** — install dependency, `compileall`, dan import check `create_app()`.
-2. **Deploy** — bila cek lolos, memanggil Deploy Hook Render.
+Setiap push ke `main`, GitHub Actions (`.github/workflows/docker-build.yml`) otomatis membangun image dan mengunggahnya ke:
 
-Aplikasi akan tersedia di `https://<nama-service>.onrender.com`.
+```
+ghcr.io/hisyamali/konverter
+```
 
-### Catatan
+Tag yang dibuat: `latest` dan `sha-<7 huruf>`. Tidak perlu secret — pakai `GITHUB_TOKEN` bawaan.
 
-- Produksi memakai `gunicorn` (`wsgi.py`) dengan worker `gthread` (`--threads 8`) agar polling `/progress` tetap terlayani saat `/convert` berjalan, dan `--timeout 0` agar konversi besar tidak diputus.
-- Free tier Render tidur saat idle; request pertama setelah tidur terasa lambat. RAM/CPU terbatas, sehingga konversi PDF ribuan halaman bisa lambat — atur `KONVERTER_MAX_WORKERS=1` (default di `render.yaml`).
-- Filesystem Render bersifat sementara (ephemeral); aman karena aplikasi hanya menyimpan file sementara.
+Menjalankan image dari host mana pun (VPS/mesin lain):
+
+```bash
+docker run -d -p 5000:7860 -e PORT=7860 -e KONVERTER_MAX_WORKERS=2 ghcr.io/hisyamali/konverter:latest
+```
+
+> Package GHCR defaultnya **private**. Agar bisa di-pull publik, buka GitHub → repo → **Settings → Packages** → set visibility package `konverter` → **public**.
+
+## Dev Container (VS Code / Codespaces)
+
+Repositori memiliki **dua** konfigurasi dev container agar lingkungan lokal dan Codespaces tidak saling mengganggu:
+
+| Konfigurasi | Untuk | Ringkasan |
+| --- | --- | --- |
+| `.devcontainer/devcontainer.json` | **GitHub Codespaces** (default) | Image universal + port 5000 otomatis publik |
+| `.devcontainer/local/devcontainer.json` | **VS Code lokal** | Image Python 3.13, install dependensi, jalankan `python run.py` |
+
+### Codespaces
+
+Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, jalankan `docker compose up --build` lalu jadikan port 5000 publik (lihat bagian *Akses Online*).
+
+### VS Code lokal
+
+1. Buka repo di VS Code (Docker Desktop harus berjalan).
+2. Command Palette (`Ctrl+Shift+P`) → **Dev Containers: Reopen in Container**.
+3. Jika muncul pilihan, pilih **Konverter (local - Python native)**. Bila picker tidak muncul, gunakan **Dev Containers: Open Folder in Container...** lalu pilih konfigurasi tersebut.
+4. Di terminal dalam container, jalankan `python run.py` lalu buka <http://localhost:5000>.
+
+> Konfigurasi lokal tidak menjalankan Docker di dalam container. Jika ingin memakai Docker, jalankan `docker compose up --build` dari terminal **host** (Docker Desktop), atau pakai config Codespaces.
 
 ## Konfigurasi
 
@@ -100,11 +132,17 @@ Pedoman kecepatan (terukur pada i5-11400H, Windows): ±0,55–0,65 dtk/halaman s
 konverter/
 ├── run.py                  # Entry point aplikasi (mode stabil, tanpa reloader) — dev lokal
 ├── wsgi.py                 # Entry point produksi (gunicorn)
-├── render.yaml             # Blueprint deploy Render
+├── Dockerfile              # Image Docker (host-agnostic)
+├── docker-compose.yml      # Menjalankan via Docker Compose
+├── .dockerignore
 ├── requirements.txt
+├── .devcontainer/
+│   ├── devcontainer.json       # Konfigurasi GitHub Codespaces (port publik)
+│   └── local/
+│       └── devcontainer.json   # Konfigurasi VS Code lokal (Python native)
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml      # GitHub Actions: cek kode → deploy ke Render
+│       └── docker-build.yml  # GitHub Actions: build & push image ke GHCR
 ├── app/
 │   ├── __init__.py         # create_app(), konfigurasi folder
 │   ├── routes.py           # Endpoint /, /preview, /convert, /progress
