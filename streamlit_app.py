@@ -303,7 +303,7 @@ with st.container(key="kv-hero"):
             and st.session_state.get("output_kind") == kind
         )
 
-        if output_ready:
+        if output_ready and uploaded is not None:
             st.download_button(
                 "Unduh Excel",
                 data=st.session_state["output_bytes"],
