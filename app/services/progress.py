@@ -3,10 +3,17 @@
 import threading
 import time
 
+from flask import current_app
+
 MAX_AGE_SECONDS = 600
 
 _lock = threading.Lock()
 _jobs = {}
+
+
+def _log_job(action, job_id, **context):
+    if current_app:
+        current_app.logger.info(f"Job {action}", extra={"context": {"job_id": job_id, **context}})
 
 
 def create_job(job_id, message="Menyiapkan file"):
@@ -23,7 +30,7 @@ def create_job(job_id, message="Menyiapkan file"):
             "updated_at": time.time(),
         }
 
-    return job_id
+    _log_job("create", job_id, message=message)
 
 
 def update_job(job_id, percent, message=None, eta_seconds=None):
@@ -84,6 +91,8 @@ def finish_job(job_id, error=None):
         else:
             job["error"] = error
 
+    _log_job("finish", job_id, error=error, percent=job["percent"], message=job.get("message"))
+
 
 def _purge_expired():
     """Hapus status job lama supaya memori tidak terus bertambah."""
@@ -96,3 +105,8 @@ def _purge_expired():
 
     for key in expired:
         del _jobs[key]
+
+    if expired:
+        from flask import current_app
+        if current_app:
+            current_app.logger.info("Job purge completed", extra={"context": {"purged": len(expired)}})

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Log: {{ filename }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h4 class="mb-0"><code>{{ filename }}</code></h4>
+            <small class="text-muted">Total {{ total_lines }} baris</small>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('logs.index') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i> Kembali
+            </a>
+            <a href="{{ url_for('logs.download', filename=filename) }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-download"></i> Download
+            </a>
+        </div>
+    </div>
+
+    <!-- Toolbar filter -->
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <form id="filter-form" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label small mb-0">Baris (tail)</label>
+                    <select name="lines" id="lines-select" class="form-select form-select-sm" onchange="this.form.submit()">
+                        {% for opt in [50, 100, 200, 500, 1000, 2000, 5000] %}
+                        <option value="{{ opt }}" {% if opt == lines %}selected{% endif %}>{{ opt }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small mb-0">Level</label>
+                    <select name="level" id="level-select" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Semua</option>
+                        {% for lvl in levels %}
+                        <option value="{{ lvl }}" {% if lvl == level %}selected{% endif %}>{{ lvl }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small mb-0">Cari</label>
+                    <input type="text" name="search" id="search-input" class="form-control form-control-sm"
+                           value="{{ search }}" placeholder="Kata kunci..." onkeydown="if(event.key==='Enter')this.form.submit()">
+                </div>
+                <div class="col-auto">
+                    <div class="form-check">
+                        <input type="checkbox" name="auto" id="auto-refresh" class="form-check-input"
+                               {% if auto_refresh %}checked{% endif %} onchange="toggleAutoRefresh()">
+                        <label class="form-check-label small" for="auto-refresh">Auto-refresh (2s)</label>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary btn-sm">Terapkan</button>
+                    <a href="{{ url_for('logs.view', filename=filename) }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Log content -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>Log Content</strong>
+            <span id="log-status" class="text-muted small"></span>
+        </div>
+        <div class="card-body p-0">
+            <pre id="log-content" class="mb-0 p-3" style="max-height: 70vh; overflow: auto; font-size: 0.85rem; line-height: 1.5;">{{ log_lines|join('\n') }}</pre>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/logs.js') }}"></script>
+<script>
+    // Initialize logs.js with server-rendered config
+    window.LogsConfig = {
+        filename: {{ filename|tojson }},
+        lines: {{ lines }},
+        level: {{ level|tojson }},
+        search: {{ search|tojson }},
+        autoRefresh: {{ 'true' if auto_refresh else 'false' }},
+        baseUrl: {{ url_for('logs.api')|tojson }}
+    };
+    document.addEventListener('DOMContentLoaded', () => {
+        initLogsViewer();
+    });
+</script>
+{% endblock %}

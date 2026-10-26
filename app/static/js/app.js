@@ -286,6 +286,16 @@ function clearPreview() {
     setStepActive("upload");
 }
 
+function resetInput() {
+    // Mengosongkan input file dan seluruh pratinjau setelah konversi berhasil.
+    clearPreview();
+    fileInput.value = "";
+    previewStatus.hidden = true;
+    previewStatus.textContent = "";
+    previewStatus.classList.remove("is-error");
+    console.log(previewPanel);
+}
+
 function selectedType() {
     // Membaca jenis konversi yang sedang dipilih user.
     return typeSelect.value;
@@ -562,7 +572,7 @@ function convertNow() {
         if (request.status === 200 && isSpreadsheet(request)) {
             setStatus(100, "Selesai, mengunduh file", null, lastElapsed);
             downloadFile(request.response, readFileName(request));
-            submitButton.disabled = false;
+            resetInput();
             closeOverlay();
             return;
         }

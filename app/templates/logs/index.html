@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Log Viewer{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Log Viewer</h2>
+        <div class="text-muted small">
+            <span id="server-time"></span>
+        </div>
+    </div>
+
+    {% if files %}
+    <div class="card">
+        <div class="card-header">
+            <strong>File Log Tersedia</strong> ({{ files|length }} file)
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="logs-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Nama File</th>
+                            <th class="text-end">Ukuran</th>
+                            <th>Terakhir Diubah (WIB)</th>
+                            <th class="text-center">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in files %}
+                        <tr>
+                            <td><code>{{ f.name }}</code></td>
+                            <td class="text-end">{{ f.size_human }}</td>
+                            <td>{{ f.mtime_str }}</td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{{ url_for('logs.view', filename=f.name) }}" class="btn btn-outline-primary" title="Lihat">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <a href="{{ url_for('logs.download', filename=f.name) }}" class="btn btn-outline-secondary" title="Download">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> Tidak ada file log ditemukan di <code>storage/logs/</code>.
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    // Update server time
+    function updateTime() {
+        const now = new Date();
+        const options = { timeZone: 'Asia/Jakarta', hour12: false };
+        const str = now.toLocaleString('id-ID', options);
+        document.getElementById('server-time').textContent = 'Waktu server: ' + str + ' WIB';
+    }
+    updateTime();
+    setInterval(updateTime, 1000);
+</script>
+{% endblock %}

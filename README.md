@@ -11,7 +11,7 @@ Aplikasi web (Flask) untuk mengonversi file **PDF** dan **CSV** menjadi **Excel 
 - **Progress real-time** pada modal konversi:
   - Persentase + pesan tahap (`Halaman X dari halaman Y`, `Menyusun kolom data`, `Menulis file Excel`)
   - **Perkiraan waktu tersisa** (2 baris: `± ... tersisa` / `berjalan ...`) dan total waktu saat selesai
-  - Detektor kemacetan: jika pembacaan lambat, pesan `pembacaan melambat (±N detik), tetap berjalan`; bila tidak ada kemajuan selama 90 detik, proses otomatis **beralih ke mode satu-per-satu (sekuensial)** dan tetap menyelesaikan file — tidak pernah membeku atau gagal karena mesin sibuk
+  - Detektor kemacetan/memori: jika pembacaan lambat, pesan `pembacaan melambat (±N detik), tetap berjalan`; bila tidak ada kemajuan selama 90 detik **atau** RAM kosong turun di bawah ambang, proses otomatis **beralih ke mode hemat/sekuensial** dan tetap menyelesaikan file — tidak pernah membeku atau gagal karena mesin sibuk
 - **Paralel adaptif** untuk PDF besar (baca halaman per chunk): jumlah worker dipilih otomatis berdasarkan RAM kosong dan CPU (bisa dipaksa via env)
 - **Batas unggah** konfigurasi via variabel lingkungan (default 128 MB)
 - **Pembersihan otomatis** file sementara (unggahan/pratinjau/output lama dihapus setelah 24 jam / pekerjaan selesai)
@@ -74,6 +74,29 @@ Aplikasi ini adalah **server Flask**, sehingga tidak bisa di-hosting di GitHub P
 
 > URL hanya aktif **selama sesi Codespace berjalan** (bukan permanen; sesi berhenti saat idle/tertutup). Untuk akses permanen dengan resource besar, gunakan VPS atau hosting Docker berbayar.
 
+## Aplikasi Streamlit (opsional)
+
+Selain antarmuka Flask, repositori menyertakan varian **Streamlit** (`streamlit_app.py`) yang memakai ulang logika konversi yang sama (`app/services/converter.py`).
+
+```bash
+pip install streamlit
+streamlit run streamlit_app.py
+```
+
+Buka <http://localhost:8501>. Alur sama: unggah → pratinjau → konversi → unduh `.xlsx`.
+
+### Deploy ke Streamlit Community Cloud (gratis)
+
+1. Push repo ke GitHub (publik).
+2. Buka <https://share.streamlit.io> → **New app**.
+3. Pilih repo `hisyamali/konverter`, branch `main`, main file **`streamlit_app.py`**.
+4. Pilih subdomain (mis. `hisyamali-konverter.streamlit.app`) → **Deploy**.
+
+Catatan batas Community Cloud:
+- CPU maks 2 core, RAM maks ~2.7 GB → app memaksa `KONVERTER_MAX_WORKERS=2` (lihat `streamlit_app.py`).
+- Batas unggah **50 MB** (`maxUploadSize` di `.streamlit/config.toml`).
+- App **tidur setelah 12 jam** tanpa trafik dan **tidak mendukung custom domain**.
+
 ## Image Docker di GitHub Container Registry (GHCR)
 
 Setiap push ke `main`, GitHub Actions (`.github/workflows/docker-build.yml`) otomatis membangun image dan mengunggahnya ke:
@@ -119,12 +142,26 @@ Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, j
 | Variabel lingkungan | Default | Keterangan |
 | --- | --- | --- |
 | `KONVERTER_MAX_UPLOAD_MB` | `128` | Batas ukuran file unggahan (MB) |
-| `KONVERTER_MAX_WORKERS` | `4` | Batas atas worker paralel untuk PDF besar (1–8). Worker aktual dipilih otomatis (CPU + RAM kosong); paksakan dengan nilai ini untuk mengendalikan beban |
+| `KONVERTER_MAX_WORKERS` | core fisik | Batas atas worker paralel untuk PDF besar. Default = jumlah core fisik (mis. 6); worker aktual tetap dipilih otomatis dari RAM kosong. Paksakan nilai (1–12) untuk mengendalikan beban |
+| `KONVERTER_MAX_WORKERS_CAP` | `8` | Batas keras worker saat default otomatis dipakai |
 | `KONVERTER_CHUNK_PAGES` | `20` | Halaman per tugas worker |
+| `KONVERTER_TASKS_PER_CHILD` | `32` | Jumlah tugas sebelum worker proses di-recycle (menjaga memori worker tetap datar) |
+| `KONVERTER_MEM_GB_PER_WORKER` | `0.15` | Perkiraan RAM per worker (GB) untuk memilih jumlah worker |
+| `KONVERTER_MEM_RESERVE_GB` | `0.4` | RAM yang selalu disisakan (GB) untuk aplikasi lain |
+| `KONVERTER_MEM_FLOOR_GB` | `0.35` | Ambang RAM kosong (GB): bila turun di bawah ini, konversi beralih ke mode hemat (sekuensial) |
+| `KONVERTER_POLITE` | `1` | Mode sopan: turunkan prioritas proses worker (`BELOW_NORMAL`) agar aplikasi lain tetap responsif. Set `0` untuk menonaktifkan |
+| `LOG_LEVEL` | `INFO` | Level logging: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `LOG_MAX_FILES` | `30` | Retensi file log harian (hari) |
+| `LOG_CHANNEL` | `stack` | Channel log: `stack` (console+file), `daily`, `single`, `console` |
+| `LOG_VIEWER_AUTH` | *(kosong)* | Basic auth untuk `/logs` (format `user:pass`) |
 
-> **Worker adaptif**: jumlah worker dipilih otomatis setiap konversi = min(`KONVERTER_MAX_WORKERS`, CPU, RAM kosong menyesuaikan). Bila mesin sibuk (RAM menipis), aplikasi memakai lebih sedikit worker sehingga tidak thrash; bila paralel tetap macet >90 detik, otomatis lanjut sekuensial dan **tetap selesai**.
+> **Jumlah worker dinamis**: tiap konversi memilih worker = min(core fisik, `KONVERTER_MAX_WORKERS`, RAM kosong/`KONVERTER_MEM_GB_PER_WORKER`). Semakin banyak RAM bebas, semakin banyak worker → semakin cepat. Contoh di mesin 6 core: RAM bebas 0,8 GB → 2 worker; 1,0 GB → 4 worker; ≥1,5 GB → 6 worker.
+>
+> **Guard memori (mode hemat)**: saat konversi berjalan, bila RAM kosong turun di bawah `KONVERTER_MEM_FLOOR_GB`, aplikasi menghentikan worker paralel dan melanjutkan sisa halaman secara sekuensial (`memori menipis, beralih ke mode hemat`) — mesin tetap responsif dan proses tetap selesai. Perilaku serupa berlaku bila paralel macet >90 detik.
 
-Pedoman kecepatan (terukur pada i5-11400H, Windows): ±0,55–0,65 dtk/halaman single-thread. Dengan worker adaptif (3–4) pada mesin dengan RAM cukup, file 4679 halaman ±**15–26 menit**; tutup aplikasi berat (browser/IDE) agar RAM kosong naik → worker lebih banyak → mendekati **±12–15 menit**.
+> **Mode sopan** (`KONVERTER_POLITE=1`): proses worker konversi diberi prioritas *Below Normal* sehingga saat mesin berat aplikasi lain (browser/IDE) tetap responsif. Aplikasi **tidak pernah** menutup/menghentikan aplikasi lain — hanya mengatur prioritas worker-nya sendiri.
+
+Pedoman kecepatan (terukur pada i5-11400H 6-core, Windows): ±0,40–0,45 dtk/halaman single-thread. Paralel berskala hampir linier: 4 worker ≈ 2,8× lebih cepat. **File 4679 halaman terukur selesai ±897 detik (±15 menit)** dengan worker dinamis 4–6, puncak memori proses utama ±420 MB, tanpa degradasi. Tutup aplikasi berat (browser/IDE) agar RAM kosong naik → worker lebih banyak → lebih cepat (6 worker ±9–11 menit).
 
 ## Struktur Proyek
 
@@ -132,9 +169,12 @@ Pedoman kecepatan (terukur pada i5-11400H, Windows): ±0,55–0,65 dtk/halaman s
 konverter/
 ├── run.py                  # Entry point aplikasi (mode stabil, tanpa reloader) — dev lokal
 ├── wsgi.py                 # Entry point produksi (gunicorn)
+├── streamlit_app.py        # Varian UI Streamlit (deploy ke Streamlit Cloud)
 ├── Dockerfile              # Image Docker (host-agnostic)
 ├── docker-compose.yml      # Menjalankan via Docker Compose
 ├── .dockerignore
+├── .streamlit/
+│   └── config.toml         # Konfigurasi Streamlit (maxUploadSize 50 MB, tema)
 ├── requirements.txt
 ├── .devcontainer/
 │   ├── devcontainer.json       # Konfigurasi GitHub Codespaces (port publik)
@@ -187,11 +227,13 @@ Status pekerjaan konversi.
 
 ## Detail Teknis Konversi PDF
 
-- Ekstraksi tabel memakai `pdfplumber` dengan `PDF_TABLE_SETTINGS` (strategi *lines*, `snap_xtolerance`) untuk hasil yang konsisten pada laporan mutasi bank.
-- Halaman dibaca per chunk oleh beberapa worker (`PARALLEL_CHUNK_PAGES=20`, batas `PARALLEL_MAX_WORKERS=4` via `KONVERTER_MAX_WORKERS`) untuk file lebih dari `PARALLEL_MIN_PAGES` halaman; jumlah worker aktual disesuaikan otomatis dengan RAM kosong mesin.
+- Ekstraksi tabel memakai `pdfplumber` dengan `PDF_TABLE_SETTINGS` (strategi *lines*) untuk hasil yang konsisten pada laporan mutasi bank.
+- **Format teks (tanpa garis)**: untuk PDF mutasi bank yang datanya berupa teks pada kolom tetap (mis. Bank Sumselbabel/BRI), aplikasi otomatis mendeteksi dan memakai parser berbasis posisi kolom (Tanggal, Keterangan, Debet, Kredit, Saldo, No. Referensi) — deteksi dilakukan dari halaman pertama, tanpa perubahan manual.
+- Halaman dibaca per chunk oleh beberapa worker (`PARALLEL_CHUNK_PAGES=20`); jumlah worker dinamis = min(core fisik, `KONVERTER_MAX_WORKERS`, RAM kosong). Default `KONVERTER_MAX_WORKERS` = core fisik (6 di mesin uji).
+- **Hemat memori**: hasil tiap chunk dialirkan (streaming) sesuai urutan halaman langsung ke baris data, tanpa menahan semua tabel mentah; penggabungan baris dilakukan in-place (`extend`) dan worker membersihkan cache `pdfplumber` tiap halaman (`flush_cache`) sehingga memori worker tetap datar (±0,2 GB) walau file ribuan halaman. Puncak memori proses utama turun drastis (contoh 119 halaman: ~1,1 GB → ~0,1 GB).
 - Bila tidak ada kemajuan selama `PARALLEL_DEGRADE_SECONDS=90` detik, proses beralih ke pembacaan sekuensial untuk sisa halaman (menjamin selesai meski mesin sibuk).
 - Perkiraan waktu konversi dikalibrasi dengan mengukur kecepatan ekstraksi blok halaman sekuensial pada pratinjau.
-- Pada mesin ini kecepatan baca terukur ±0,55–0,65 detik/halaman single-thread; file 4679 halaman ≈ 2800 detik CPU — dengan worker adaptif 3–4 dan mesin cukup bebas selesai ±15–26 menit.
+- Pada mesin ini kecepatan baca terukur ±0,40–0,45 detik/halaman single-thread; file 4679 halaman ≈ 1900–2100 detik CPU — dengan worker dinamis 4–6 dan mesin cukup bebas selesai **±15 menit** (terukur 897 detik).
 
 ## Menghapus Cache / File Sementara
 
@@ -215,6 +257,64 @@ Jika aplikasi sedang berjalan, cukup kosongkan isi kedua folder tersebut lalu se
 ```bash
 find . -type d -name __pycache__ -exec rm -rf {} +   # Linux/macOS
 Get-ChildItem -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse  # PowerShell
+```
+
+## Logging & Log Viewer
+
+Aplikasi menyertakan sistem logging bergaya Laravel dengan rotasi harian dan **Log Viewer** bawaan (`/logs`).
+
+### Fitur Logging
+- **Format Laravel**: `[Y-m-d H:i:s] channel.LEVEL: message {json_context}` (timezone Asia/Jakarta)
+- **Rotasi harian**: `TimedRotatingFileHandler` di `storage/logs/app.log`, retensi `LOG_MAX_FILES` hari (default 30)
+- **Channel**: `LOG_CHANNEL=stack` (console + file), `daily`, `single`, `console`
+- **Context JSON**: request_id, job_id, preview_id, memory_mb, system_memory_percent, duration_ms, dll.
+- **Level**: `LOG_LEVEL` (`DEBUG`–`CRITICAL`, default `INFO`)
+
+### Log Viewer (`/logs`)
+- **Akses**: `/logs` (daftar file), `/logs/view/<file>` (isi dengan filter), `/logs/download/<file>`
+- **Filter**: level (DEBUG/INFO/WARNING/ERROR/CRITICAL), search text, tail lines (50–5000)
+- **Auto-refresh**: polling 2 detik via `/logs/api`
+- **Autentikasi**: `LOG_VIEWER_AUTH=user:pass` (basic auth), default tanpa auth untuk dev
+- **Highlight**: ERROR (merah), WARNING (kuning), INFO (biru), DEBUG (abu)
+
+### Milestone Konversi (di log)
+| Milestone | Context Utama |
+|---|---|
+| `reading` | input_path, total_pages, memory_mb, system_memory_percent |
+| `normalize` | rows, columns, memory_mb, memory_delta_mb |
+| `write` | rows, columns |
+| `done` | output_path, rows, duration_ms, memory_mb, memory_delta_mb, system_memory_percent |
+| `error` | error, error_type, job_id, preview_id |
+
+### Request/Job/Preview Logging
+- **Request**: request_id, method, path, status, duration_ms, memory_delta_mb, system_memory_percent
+- **Job**: create, update (phase), finish (error/success)
+- **Preview**: register, get, delete, sweep, purge_expired
+
+### Error & Peringatan
+Semua kegagalan kini tercatat (bukan hanya exception konversi):
+
+| Kejadian | Level | Pesan |
+|---|---|---|
+| Validasi upload / pratinjau kedaluwarsa | `WARNING` | `Request rejected` + `reason`, `job_id`, `preview_id` |
+| Gagal membaca file saat pratinjau (ValueError) | `WARNING` | `Preview rejected` |
+| Gagal membaca file saat pratinjau (exception lain) | `ERROR` | `Preview failed` + traceback |
+| Konversi gagal | `ERROR` | `Conversion failed` + traceback |
+| Error di worker paralel (`BrokenProcessPool`/lain) | `ERROR` | `Conversion error` + `stage` + traceback |
+| Degradasi ke mode hemat (RAM/macet) | `WARNING` | `Conversion degraded` + `reason` |
+| Upload melebihi batas | `WARNING` | `Upload rejected` + `content_length` |
+| HTTP 404 | `WARNING` | `HTTP error` + `status`, `path` |
+| HTTP 500 / exception tak tertangani | `ERROR` | `HTTP error` / `Request exception` + traceback |
+
+Traceback ditulis pada **baris log yang sama** (newline di-escape menjadi `\n`) agar tetap bisa difilter level dan di-tail. Filter `ERROR` di Log Viewer akan menampilkan seluruh baris error beserta traceback-nya.
+
+### Contoh Entri Log
+```
+[2026-10-19 16:52:05] app.INFO: Conversion reading {"input_path":".../SULSELBAR.pdf","total_pages":8,"memory_mb":157.8,"system_memory_percent":96.4}
+[2026-10-19 16:52:05] app.INFO: Conversion normalize {"rows":454,"memory_mb":122.3,"memory_delta_mb":-35.5}
+[2026-10-19 16:52:05] app.INFO: Conversion write {"rows":454,"columns":[0,1,2,3,4,5]}
+[2026-10-19 16:52:05] app.INFO: Conversion done {"output_path":".../SULSELBAR-xxx.xlsx","rows":454,"duration_ms":5518,"memory_mb":122.3,"memory_delta_mb":-35.5,"system_memory_percent":96.3}
+[2026-10-19 16:52:05] app.INFO: Job finish {"job_id":"e2e3","error":null,"percent":100,"message":"Selesai"}
 ```
 
 ## Pemecahan Masalah

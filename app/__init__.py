@@ -5,13 +5,15 @@ from pathlib import Path
 from pandas import DataFrame
 from flask import Flask
 
-from app.routes import main_bp
+from app.logging import configure_logging
+from app.middleware.request_context import register_request_logging
+from app.routes import main_bp, logs_bp
 
 
 def create_app():
-    """Siapkan konfigurasi upload/output, folder storage, dan blueprint route."""
+    """Siapkan konfigurasi upload/output, folder storage, logging, dan blueprint route."""
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = "change-this-secret-key"
+    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-this-secret-key")
 
     max_upload_mb = int(os.environ.get("KONVERTER_MAX_UPLOAD_MB", "128"))
     app.config["MAX_UPLOAD_MB"] = max_upload_mb
@@ -24,5 +26,12 @@ def create_app():
     app.config["UPLOAD_FOLDER"].mkdir(parents=True, exist_ok=True)
     app.config["OUTPUT_FOLDER"].mkdir(parents=True, exist_ok=True)
 
+    # Logging & request context middleware
+    configure_logging(app)
+    register_request_logging(app)
+
+    # Blueprints
     app.register_blueprint(main_bp)
+    app.register_blueprint(logs_bp)
+
     return app

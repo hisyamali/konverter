@@ -4,10 +4,32 @@ import threading
 import time
 from pathlib import Path
 
+from flask import current_app
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 PREVIEW_MAX_AGE_SECONDS = 86400
 
 _lock = threading.Lock()
 _previews = {}
+
+
+def _get_memory_usage_mb():
+    if psutil is None:
+        return None
+    try:
+        process = psutil.Process()
+        return round(process.memory_info().rss / 1024 / 1024, 1)
+    except Exception:
+        return None
+
+
+def _log_preview(action, preview_id, **context):
+    if current_app:
+        current_app.logger.info(f"Preview {action}", extra={"context": {"preview_id": preview_id, **context}})
 
 
 def register_preview(preview_id, path, original_name, conversion_type, meta=None):
@@ -21,6 +43,8 @@ def register_preview(preview_id, path, original_name, conversion_type, meta=None
             "created_at": time.time(),
             "meta": dict(meta) if meta else {},
         }
+
+    _log_preview("register", preview_id, original_name=original_name, conversion_type=conversion_type, memory_mb=_get_memory_usage_mb())
 
     return preview_id
 
@@ -39,9 +63,11 @@ def get_preview(preview_id):
 
         if not preview["path"].exists():
             del _previews[preview_id]
+            _log_preview("get_missing_file", preview_id)
             return None
 
-        return dict(preview)
+    _log_preview("get", preview_id, original_name=preview["original_name"], conversion_type=preview["conversion_type"])
+    return dict(preview)
 
 
 def delete_preview(preview_id):
@@ -54,6 +80,7 @@ def delete_preview(preview_id):
             preview["path"].unlink(missing_ok=True)
         except OSError:
             pass
+        _log_preview("delete", preview_id, original_name=preview["original_name"])
 
 
 def sweep_old_files(folder, max_age_seconds=PREVIEW_MAX_AGE_SECONDS):
@@ -61,9 +88,10 @@ def sweep_old_files(folder, max_age_seconds=PREVIEW_MAX_AGE_SECONDS):
     try:
         folder_iter = list(folder.iterdir())
     except OSError:
-        return
+        return 0
 
     now = time.time()
+    deleted = 0
 
     for path in folder_iter:
         try:
@@ -75,8 +103,15 @@ def sweep_old_files(folder, max_age_seconds=PREVIEW_MAX_AGE_SECONDS):
 
             if now - path.stat().st_mtime > max_age_seconds:
                 path.unlink(missing_ok=True)
+                deleted += 1
         except OSError:
             continue
+
+    if deleted:
+        if current_app:
+            current_app.logger.info("Sweep completed", extra={"context": {"folder": str(folder), "deleted": deleted}})
+
+    return deleted
 
 
 def _purge_expired():
@@ -96,3 +131,4 @@ def _purge_expired():
                 preview["path"].unlink(missing_ok=True)
             except OSError:
                 pass
+            _log_preview("purge_expired", key, original_name=preview.get("original_name"))
