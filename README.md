@@ -76,14 +76,14 @@ Aplikasi ini adalah **server Flask**, sehingga tidak bisa di-hosting di GitHub P
 
 ## Aplikasi Streamlit (opsional)
 
-Selain antarmuka Flask, repositori menyertakan varian **Streamlit** (`streamlit_app.py`) yang memakai ulang logika konversi yang sama (`app/services/converter.py`).
+Selain antarmuka Flask, repositori menyertakan varian **Streamlit** (`streamlit_app.py`) yang memakai ulang logika konversi yang sama (`app/services/converter.py`). Tampilannya meniru UI Flask (hero, stepper 2 langkah, kartu pratinjau, overlay progress + ETA, feature grid) melalui `app/static/css/streamlit.css`.
 
 ```bash
-pip install streamlit
+pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-Buka <http://localhost:8501>. Alur sama: unggah → pratinjau → konversi → unduh `.xlsx`.
+Buka <http://localhost:8501>. Alur sama: unggah → pratinjau → konversi → unduh `.xlsx`. Jalankan dari **root repo** agar `.streamlit/config.toml` terbaca.
 
 ### Deploy ke Streamlit Community Cloud (gratis)
 
@@ -93,9 +93,10 @@ Buka <http://localhost:8501>. Alur sama: unggah → pratinjau → konversi → u
 4. Pilih subdomain (mis. `hisyamali-konverter.streamlit.app`) → **Deploy**.
 
 Catatan batas Community Cloud:
-- CPU maks 2 core, RAM maks ~2.7 GB → app memaksa `KONVERTER_MAX_WORKERS=2` (lihat `streamlit_app.py`).
+- CPU maks 2 core, RAM maks ~2.7 GB → app memakai `KONVERTER_MAX_WORKERS=2` di Linux/Cloud (otomatis `1` di Windows lokal agar stabil).
 - Batas unggah **50 MB** (`maxUploadSize` di `.streamlit/config.toml`).
 - App **tidur setelah 12 jam** tanpa trafik dan **tidak mendukung custom domain**.
+- Overlay progress bergantung pada CSS Streamlit (`data-testid`); versi Streamlit dipin `1.66.1` agar tampilan stabil.
 
 ## Image Docker di GitHub Container Registry (GHCR)
 
@@ -185,14 +186,19 @@ konverter/
 │       └── docker-build.yml  # GitHub Actions: build & push image ke GHCR
 ├── app/
 │   ├── __init__.py         # create_app(), konfigurasi folder
-│   ├── routes.py           # Endpoint /, /preview, /convert, /progress
+│   ├── routes/
+│   │   ├── main.py         # Endpoint /, /preview, /convert, /progress
+│   │   └── logs.py         # Log viewer
 │   ├── templates/
 │   │   └── index.html      # UI satu halaman
 │   ├── static/
 │   │   ├── js/app.js       # Logika klien (upload, polling progress, download)
-│   │   └── css/style.css
+│   │   ├── js/logs.js      # Log viewer (auto-refresh)
+│   │   ├── css/style.css   # Tema UI Flask
+│   │   └── css/streamlit.css  # Reskin UI Streamlit (mirip Flask)
 │   └── services/
 │       ├── converter.py    # Logika konversi CSV/PDF → Excel, ekstraksi tabel
+│       ├── eta.py          # Perhitungan progress/ETA (dipakai Flask & Streamlit)
 │       ├── previews.py     # Registrasi/pratinjau temp, pembersihan TTL
 │       └── progress.py     # Status pekerjaan konversi (in-memory)
 └── storage/

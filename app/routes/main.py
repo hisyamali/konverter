@@ -1,7 +1,6 @@
 """Route HTTP untuk halaman utama, pratinjau file, konversi, dan polling progress."""
 
 import io
-import re
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -15,6 +14,7 @@ from app.services.converter import (
     preview_csv_file,
     preview_pdf_file,
 )
+from app.services.eta import ProgressReporter
 from app.services.previews import (
     delete_preview,
     get_preview,
@@ -282,81 +282,20 @@ def _sweep_stale():
 
 def _build_progress(job_id):
     """Buat callback progress yang menghitung ETA lalu menyimpannya ke job store."""
-    started = time.monotonic()
-    state = {"eta": None, "phase": None, "phase_started": 0.0, "phase_percent": 0}
 
-    def report(percent, message=None):
-        elapsed = time.monotonic() - started
-        phase = _phase_key(message)
-
-        if phase != state["phase"]:
-            state["phase"] = phase
-            state["phase_started"] = elapsed
-            state["phase_percent"] = percent
-            state["eta"] = None
-            # Log phase change
-            current_app.logger.info("Conversion phase", extra={
-                "context": {
-                    "job_id": job_id,
-                    "phase": phase,
-                    "percent": percent,
-                }
-            })
-
-        eta = _estimate_eta(percent, elapsed, message, state)
-        state["eta"] = eta
+    def handle_update(percent, message, eta, _elapsed):
         update_job(job_id, percent, message, eta_seconds=eta)
 
-    return report
+    def handle_phase(phase, percent):
+        current_app.logger.info("Conversion phase", extra={
+            "context": {
+                "job_id": job_id,
+                "phase": phase,
+                "percent": percent,
+            }
+        })
 
-
-_PAGE_PROGRESS_RE = re.compile(r"Halaman (\d+) dari halaman (\d+)")
-
-
-def _phase_key(message):
-    """Kelompokkan pesan progress ke fase besar untuk perhitungan ETA yang stabil."""
-    if not message:
-        return None
-
-    if message.startswith("Halaman "):
-        return "reading"
-
-    if message.startswith("Menyusun "):
-        return "normalize"
-
-    if message.startswith("Menulis "):
-        return "write"
-
-    return None
-
-
-def _estimate_eta(percent, elapsed, message, state):
-    """Hitung sisa waktu berdasarkan halaman PDF atau kenaikan persentase fase."""
-    if percent <= 0 or percent >= 100:
-        return None
-
-    remaining = None
-    match = _PAGE_PROGRESS_RE.match(message) if message else None
-
-    if match:
-        pages_read = int(match.group(1))
-        total_pages = int(match.group(2))
-
-        if pages_read > 0:
-            remaining = elapsed * (total_pages - pages_read) / pages_read
-
-    if remaining is None:
-        phase_elapsed = max(elapsed - state["phase_started"], 0.001)
-        span = max(percent - state["phase_percent"], 1)
-        remaining = phase_elapsed * (100 - percent) / span
-
-    previous = state["eta"]
-
-    if previous is None:
-        return int(max(remaining, 0))
-
-    alpha = 0.7 if remaining >= previous else 0.5
-    return int(round(max(alpha * previous + (1 - alpha) * remaining, 0)))
+    return ProgressReporter(handle_update, on_phase=handle_phase)
 
 
 def _reject(message, job_id=None, preview_id=None, level="WARNING", log=True):
