@@ -90,13 +90,30 @@ Buka <http://localhost:8501>. Alur sama: unggah → pratinjau → konversi → u
 1. Push repo ke GitHub (publik).
 2. Buka <https://share.streamlit.io> → **New app**.
 3. Pilih repo `hisyamali/konverter`, branch `main`, main file **`streamlit_app.py`**.
-4. Pilih subdomain (mis. `hisyamali-konverter.streamlit.app`) → **Deploy**.
+4. Pilih subdomain (mis. `all-convert.streamlit.app`) → **Deploy**.
 
 Catatan batas Community Cloud:
 - CPU maks 2 core, RAM maks ~2.7 GB → app memakai `KONVERTER_MAX_WORKERS=2` di Linux/Cloud (otomatis `1` di Windows lokal agar stabil).
 - Batas unggah **50 MB** (`maxUploadSize` di `.streamlit/config.toml`).
 - App **tidur setelah 12 jam** tanpa trafik dan **tidak mendukung custom domain**.
 - Overlay progress bergantung pada CSS Streamlit (`data-testid`); versi Streamlit dipin `1.66.1` agar tampilan stabil.
+
+### Menjaga app tetap bangun (keep-alive)
+
+Streamlit menghitung aktivitas dari **sesi browser** (JavaScript + WebSocket), bukan HTTP GET. Ping biasa (UptimeRobot, `curl`) tetap menerima `200` walau app sedang tidur, jadi tidak berguna. Karena itu repositori menyertakan workflow `.github/workflows/keep-warm.yml` yang membuka app memakai Chromium headless (Playwright), mengklik tombol **"Yes, get this app back up!"** bila app tidur, lalu menahan sesi ±60 detik.
+
+1. Set URL app di **Settings → Secrets and variables → Actions → Variables**:
+   - Name: `STREAMLIT_APP_URL`
+   - Value: `https://all-convert.streamlit.app`
+2. Jalankan manual sekali dari tab **Actions → Keep Streamlit Awake → Run workflow**.
+3. Setelah itu workflow berjalan otomatis tiap 3 jam.
+
+Catatan:
+- Workflow harus ada di branch default (`main`) agar jadwalnya aktif.
+- Repo publik memakai menit GitHub Actions gratis; repo privat memakai kuota 2.000 menit/bulan (≈960 menit di sini).
+- Ini bukan fitur resmi Streamlit dan bisa berhenti berfungsi bila kebijakan fair-use berubah. Pengunjung pertama setelah app tidur tetap melihat cold start.
+- GitHub menonaktifkan scheduled workflow bila repo tidak ada aktivitas selama 60 hari; jalankan manual untuk mengaktifkan lagi.
+- Debug: screenshot kegagalan diunggah sebagai artifact `keep-warm-failure`.
 
 ## Image Docker di GitHub Container Registry (GHCR)
 
@@ -182,8 +199,13 @@ konverter/
 │   └── local/
 │       └── devcontainer.json   # Konfigurasi VS Code lokal (Python native)
 ├── .github/
+│   ├── scripts/
+│   │   ├── keep-warm.mjs    # Kunjungan browser via Playwright (keep-alive)
+│   │   ├── package.json
+│   │   └── package-lock.json
 │   └── workflows/
-│       └── docker-build.yml  # GitHub Actions: build & push image ke GHCR
+│       ├── docker-build.yml  # GitHub Actions: build & push image ke GHCR
+│       └── keep-warm.yml     # GitHub Actions: cegah app Streamlit tidur
 ├── app/
 │   ├── __init__.py         # create_app(), konfigurasi folder
 │   ├── routes/

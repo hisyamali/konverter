@@ -1,0 +1,9 @@
+{
+  "name": "keep-warm",
+  "private": true,
+  "type": "module",
+  "description": "Kunjungan browser berkala agar app Streamlit Community Cloud tidak tidur.",
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

@@ -1,3 +1,6 @@
+# Node (GitHub Actions keep-warm script)
+node_modules/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

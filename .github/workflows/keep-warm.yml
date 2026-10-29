@@ -1,0 +1,78 @@
+name: Keep Streamlit Awake
+
+# Menjaga app Streamlit Community Cloud tetap bangun.
+# Streamlit memakai "kunjungan browser sungguhan" (JavaScript + WebSocket) sebagai
+# aktivitas, bukan HTTP GET biasa. Karena itu workflow ini membuka app di Chromium
+# headless lewat Playwright, mengklik tombol "Yes, get this app back up!" bila app
+# sedang tidur, lalu menahan sesi sebentar agar aktivitas tercatat.
+#
+# Pasang URL app di: Settings > Secrets and variables > Actions > Variables
+#   name : STREAMLIT_APP_URL
+#   value: https://<subdomain>.streamlit.app
+# Kalau variabel belum diisi, dipakai nilai default di bawah.
+
+on:
+  schedule:
+    # Tiap 3 jam, menit ke-17 (hindari antrean cron di menit 0).
+    - cron: "17 */3 * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/keep-warm.yml"
+      - ".github/scripts/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-streamlit-awake
+  cancel-in-progress: true
+
+jobs:
+  keep-warm:
+    name: Buka app & bangunkan bila tidur
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .github/scripts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: .github/scripts/package-lock.json
+
+      - name: Cache browser Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('.github/scripts/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Kunjungi aplikasi
+        env:
+          APP_URL: ${{ vars.STREAMLIT_APP_URL || 'https://all-convert.streamlit.app' }}
+          HOLD_SECONDS: "60"
+        run: node keep-warm.mjs
+
+      - name: Upload screenshot kegagalan
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keep-warm-failure
+          path: .github/scripts/keep-warm-failure.png
+          if-no-files-found: ignore
+          retention-days: 7
