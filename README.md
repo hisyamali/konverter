@@ -12,6 +12,7 @@ Aplikasi web (Flask) untuk mengonversi file **PDF** dan **CSV** menjadi **Excel 
   - Persentase + pesan tahap (`Halaman X dari halaman Y`, `Menyusun kolom data`, `Menulis file Excel`)
   - **Perkiraan waktu tersisa** (2 baris: `± ... tersisa` / `berjalan ...`) dan total waktu saat selesai
   - Detektor kemacetan/memori: jika pembacaan lambat, pesan `pembacaan melambat (±N detik), tetap berjalan`; bila tidak ada kemajuan selama 90 detik **atau** RAM kosong turun di bawah ambang, proses otomatis **beralih ke mode hemat/sekuensial** dan tetap menyelesaikan file — tidak pernah membeku atau gagal karena mesin sibuk
+- **Mesin PDF cepat**: PDF berbasis teks dibaca dengan **PyMuPDF** (±3–5 ms/halaman, **±20× lebih cepat** dari `pdfplumber`); PDF tabel bergaris tetap memakai `pdfplumber` (strategi *lines*) karena lebih akurat
 - **Paralel adaptif** untuk PDF besar (baca halaman per chunk): jumlah worker dipilih otomatis berdasarkan RAM kosong dan CPU (bisa dipaksa via env)
 - **Batas unggah** konfigurasi via variabel lingkungan (default 128 MB)
 - **Pembersihan otomatis** file sementara (unggahan/pratinjau/output lama dihapus setelah 24 jam / pekerjaan selesai)
@@ -160,6 +161,8 @@ Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, j
 | Variabel lingkungan | Default | Keterangan |
 | --- | --- | --- |
 | `KONVERTER_MAX_UPLOAD_MB` | `128` | Batas ukuran file unggahan (MB) |
+| `KONVERTER_PDF_WORDS` | `1` | Pakai PyMuPDF untuk ekstraksi **teks** PDF (jauh lebih cepat, ±20×). Set `0` untuk kembali sepenuhnya ke `pdfplumber` |
+| `KONVERTER_TEXT_MIN_PARALLEL_PAGES` | `400` | Ambang halaman minimal jalur teks sebelum memakai worker paralel (di bawah ini sekuensial lebih cepat karena jalur teks sudah ±5 ms/halaman). Otomatis `12` bila PyMuPDF tidak tersedia |
 | `KONVERTER_MAX_WORKERS` | core fisik | Batas atas worker paralel untuk PDF besar. Default = jumlah core fisik (mis. 6); worker aktual tetap dipilih otomatis dari RAM kosong. Paksakan nilai (1–12) untuk mengendalikan beban |
 | `KONVERTER_MAX_WORKERS_CAP` | `8` | Batas keras worker saat default otomatis dipakai |
 | `KONVERTER_CHUNK_PAGES` | `20` | Halaman per tugas worker |
@@ -179,7 +182,10 @@ Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, j
 
 > **Mode sopan** (`KONVERTER_POLITE=1`): proses worker konversi diberi prioritas *Below Normal* sehingga saat mesin berat aplikasi lain (browser/IDE) tetap responsif. Aplikasi **tidak pernah** menutup/menghentikan aplikasi lain — hanya mengatur prioritas worker-nya sendiri.
 
-Pedoman kecepatan (terukur pada i5-11400H 6-core, Windows): ±0,40–0,45 dtk/halaman single-thread. Paralel berskala hampir linier: 4 worker ≈ 2,8× lebih cepat. **File 4679 halaman terukur selesai ±897 detik (±15 menit)** dengan worker dinamis 4–6, puncak memori proses utama ±420 MB, tanpa degradasi. Tutup aplikasi berat (browser/IDE) agar RAM kosong naik → worker lebih banyak → lebih cepat (6 worker ±9–11 menit).
+Pedoman kecepatan (terukur pada i5-11400H 6-core, Windows):
+
+- **PDF teks (tanpa garis)**: ±3–5 ms/halaman dengan PyMuPDF. File 30 halaman selesai **±0,35 detik** (sebelumnya ±3,1 detik / ±103 ms per halaman dengan `pdfplumber`) — **±20× lebih cepat** dengan output baris identik (720/720). Karena itu jalur teks baru memakai worker paralel bila halaman > `KONVERTER_TEXT_MIN_PARALLEL_PAGES` (default 400); di bawah itu sekuensial lebih cepat (overhead spawn proses lebih besar dari waktunya).
+- **PDF tabel bergaris**: tetap `pdfplumber` (±110–170 ms/halaman single-thread). Paralel berskala hampir linier: 4 worker ≈ 2,8× lebih cepat. **File 4679 halaman terukur selesai ±897 detik (±15 menit)** dengan worker dinamis 4–6, puncak memori proses utama ±420 MB. Tutup aplikasi berat (browser/IDE) agar RAM kosong naik → worker lebih banyak → lebih cepat (6 worker ±9–11 menit).
 
 ## Struktur Proyek
 
@@ -255,13 +261,15 @@ Status pekerjaan konversi.
 
 ## Detail Teknis Konversi PDF
 
-- Ekstraksi tabel memakai `pdfplumber` dengan `PDF_TABLE_SETTINGS` (strategi *lines*) untuk hasil yang konsisten pada laporan mutasi bank.
-- **Format teks (tanpa garis)**: untuk PDF mutasi bank yang datanya berupa teks pada kolom tetap (mis. Bank Sumselbabel/BRI), aplikasi otomatis mendeteksi dan memakai parser berbasis posisi kolom (Tanggal, Keterangan, Debet, Kredit, Saldo, No. Referensi) — deteksi dilakukan dari halaman pertama, tanpa perubahan manual.
-- Halaman dibaca per chunk oleh beberapa worker (`PARALLEL_CHUNK_PAGES=20`); jumlah worker dinamis = min(core fisik, `KONVERTER_MAX_WORKERS`, RAM kosong). Default `KONVERTER_MAX_WORKERS` = core fisik (6 di mesin uji).
+- Ekstraksi tabel bergaris memakai `pdfplumber` dengan `PDF_TABLE_SETTINGS` (strategi *lines*) untuk hasil yang konsisten pada laporan mutasi bank. (`find_tables` PyMuPDF diukur **lebih lambat** 2–3× dan menambah baris kosong, jadi tidak dipakai untuk tabel.)
+- **Format teks (tanpa garis)**: untuk PDF mutasi bank yang datanya berupa teks pada kolom tetap (mis. Bank Sumselbabel/BRI), aplikasi otomatis mendeteksi dan memakai parser berbasis posisi kolom (Tanggal, Keterangan, Debet, Kredit, Saldo, No. Referensi) — deteksi dilakukan dari halaman pertama, tanpa perubahan manual. Parser ini membaca kata via **PyMuPDF (`get_text("words")`)** bila tersedia: ±3–5 ms/halaman (**±20×** lebih cepat dari `pdfplumber`), output baris identik (diuji 720/720). Nonaktifkan dengan `KONVERTER_PDF_WORDS=0`.
+- Halaman dibaca per chunk oleh beberapa worker (`PARALLEL_CHUNK_PAGES=20`); jumlah worker dinamis = min(core fisik, `KONVERTER_MAX_WORKERS`, RAM kosong). Default `KONVERTER_MAX_WORKERS` = core fisik (6 di mesin uji). Jalur teks memakai ambang terpisah `KONVERTER_TEXT_MIN_PARALLEL_PAGES` (default 400).
 - **Hemat memori**: hasil tiap chunk dialirkan (streaming) sesuai urutan halaman langsung ke baris data, tanpa menahan semua tabel mentah; penggabungan baris dilakukan in-place (`extend`) dan worker membersihkan cache `pdfplumber` tiap halaman (`flush_cache`) sehingga memori worker tetap datar (±0,2 GB) walau file ribuan halaman. Puncak memori proses utama turun drastis (contoh 119 halaman: ~1,1 GB → ~0,1 GB).
 - Bila tidak ada kemajuan selama `PARALLEL_DEGRADE_SECONDS=90` detik, proses beralih ke pembacaan sekuensial untuk sisa halaman (menjamin selesai meski mesin sibuk).
 - Perkiraan waktu konversi dikalibrasi dengan mengukur kecepatan ekstraksi blok halaman sekuensial pada pratinjau.
-- Pada mesin ini kecepatan baca terukur ±0,40–0,45 detik/halaman single-thread; file 4679 halaman ≈ 1900–2100 detik CPU — dengan worker dinamis 4–6 dan mesin cukup bebas selesai **±15 menit** (terukur 897 detik).
+- Pada mesin ini kecepatan baca tabel bergaris terukur ±110–170 ms/halaman single-thread; jalur teks ±3–5 ms/halaman. File tabel 4679 halaman ≈ 1900–2100 detik CPU — dengan worker dinamis 4–6 dan mesin cukup bebas selesai **±15 menit** (terukur 897 detik).
+
+> **Lisensi PyMuPDF**: `pymupdf` didistribusikan di bawah **AGPL-3.0** (atau lisensi komersial Artifex). Proyek ini memakainya sebagai dependensi open-source. Jika kamu men-deploy modifikasi aplikasi ini sebagai layanan jaringan, ikuti ketentuan AGPL (sertakan sumber) atau beli lisensi komersial Artifex. Ingin menghindari AGPL? Set `KONVERTER_PDF_WORDS=0` dan hapus `pymupdf` dari `requirements.txt` — aplikasi otomatis kembali ke `pdfplumber` (lebih lambat pada jalur teks).
 
 ## Menghapus Cache / File Sementara
 

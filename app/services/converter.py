@@ -15,9 +15,20 @@ from flask import current_app, has_app_context
 from openpyxl import Workbook
 
 try:
+    import pymupdf
+except ImportError:
+    pymupdf = None
+
+try:
     import psutil
 except ImportError:
     psutil = None
+
+
+# Engine pembaca teks: PyMuPDF jauh lebih cepat untuk ekstraksi kata, tetapi
+# ekstraksi tabel bergaris tetap memakai pdfplumber (hasilnya lebih akurat).
+_FAST_WORDS_ENABLED = os.environ.get("KONVERTER_PDF_WORDS", "1") not in ("0", "false", "False")
+FAST_WORDS_AVAILABLE = pymupdf is not None and _FAST_WORDS_ENABLED
 
 
 def _get_memory_usage_mb():
@@ -113,6 +124,11 @@ PARALLEL_MIN_PAGES = 12
 PARALLEL_MAX_WORKERS_CAP = int(os.environ.get("KONVERTER_MAX_WORKERS_CAP", "8"))
 PARALLEL_CHUNK_PAGES = int(os.environ.get("KONVERTER_CHUNK_PAGES", "20"))
 PARALLEL_MAX_TASKS_PER_CHILD = int(os.environ.get("KONVERTER_TASKS_PER_CHILD", "32"))
+# Jalur teks memakai PyMuPDF (±5 ms/halaman), sehingga proses paralel baru
+# menguntungkan untuk dokumen sangat tebal; di bawah itu overhead spawn lebih besar.
+TEXT_PARALLEL_MIN_PAGES = int(
+    os.environ.get("KONVERTER_TEXT_MIN_PARALLEL_PAGES", "400" if FAST_WORDS_AVAILABLE else str(PARALLEL_MIN_PAGES))
+)
 PARALLEL_STALL_REPORT_SECONDS = 45
 PARALLEL_DEGRADE_SECONDS = 90
 PARALLEL_MEMORY_GB_PER_WORKER = float(os.environ.get("KONVERTER_MEM_GB_PER_WORKER", "0.15"))
@@ -249,13 +265,61 @@ def _collect_pdf_tables(input_path, progress, total_pages, on_tables):
 
 def _count_pages(input_path):
     """Hitung jumlah halaman PDF sebelum proses ekstraksi berjalan."""
-    with pdfplumber.open(input_path) as pdf:
-        return len(pdf.pages)
+    document = _open_text_document(input_path)
+
+    try:
+        return _document_page_count(document)
+    finally:
+        document.close()
 
 
-def _worker_count(total_pages):
+def _open_text_document(input_path):
+    """Buka PDF dengan engine tercepat yang tersedia untuk ekstraksi kata."""
+    if FAST_WORDS_AVAILABLE:
+        return pymupdf.open(str(input_path))
+
+    return pdfplumber.open(str(input_path))
+
+
+def _document_page_count(document):
+    """Ambil jumlah halaman dari dokumen PyMuPDF maupun pdfplumber."""
+    page_count = getattr(document, "page_count", None)
+
+    if isinstance(page_count, int):
+        return page_count
+
+    pages = getattr(document, "pages", None)
+
+    if isinstance(pages, list):
+        return len(pages)
+
+    return len(document)
+
+
+def _iter_pages(document, start=0):
+    """Iterasi halaman mulai dari indeks tertentu untuk kedua engine."""
+    pages = getattr(document, "pages", None)
+
+    if isinstance(pages, list):
+        return pages[start:]
+
+    return (document[index] for index in range(start, len(document)))
+
+
+def _page_words(page):
+    """Ekstrak kata (teks + posisi) dari halaman PyMuPDF atau pdfplumber."""
+    if hasattr(page, "extract_words"):
+        return page.extract_words()
+
+    return [
+        {"text": word[4], "x0": word[0], "top": word[1]}
+        for word in page.get_text("words")
+    ]
+
+
+def _worker_count(total_pages, minimum=PARALLEL_MIN_PAGES):
     """Tentukan jumlah worker paralel berdasarkan halaman, CPU, dan memori kosong."""
-    if total_pages <= PARALLEL_MIN_PAGES:
+    if total_pages <= minimum:
         return 1
 
     logical = os.cpu_count() or 1
@@ -467,7 +531,7 @@ def _detect_pdf_strategy(input_path):
 
 def _extract_text_page(page):
     """Ekstrak transaksi dari satu halaman PDF berbasis teks (posisi kolom tetap)."""
-    words = page.extract_words()
+    words = _page_words(page)
     words.sort(key=lambda w: (w["top"], w["x0"]))
 
     clusters = []
@@ -537,19 +601,41 @@ def _extract_text_chunk_task(chunk):
     """Task worker: ekstrak transaksi teks dari rentang halaman PDF."""
     start, end = chunk
     rows = []
-    for page in _WORKER_PDF.pages[start:end]:
+
+    for page in _iter_text_pages(_WORKER_PDF, start, end):
         rows.extend(_extract_text_page(page))
     return start, rows
+
+
+def _iter_text_pages(document, start, end):
+    """Iterasi halaman [start, end) untuk dokumen PyMuPDF maupun pdfplumber."""
+    pages = getattr(document, "pages", None)
+
+    if isinstance(pages, list):
+        return pages[start:end]
+
+    return (document[index] for index in range(start, min(end, len(document))))
+
+
+def _init_text_worker(pdf_path):
+    """Buka PDF di worker dengan engine teks tercepat."""
+    _apply_polite_priority()
+    global _WORKER_PDF
+    _WORKER_PDF = _open_text_document(pdf_path)
 
 
 def _read_text_pages_sequential(input_path, total_pages, progress, on_rows, start=0):
     """Baca halaman PDF berbasis teks satu per satu."""
     pages_read = start
-    with pdfplumber.open(input_path) as pdf:
-        for page in pdf.pages[start:]:
+    document = _open_text_document(input_path)
+
+    try:
+        for page in _iter_pages(document, start):
             on_rows(_extract_text_page(page))
             pages_read += 1
             _report(progress, _percent_from_pages(pages_read, total_pages), _status_message(pages_read, total_pages))
+    finally:
+        document.close()
 
 
 def _read_text_chunks_parallel(input_path, chunks, workers, total_pages, progress, on_rows):
@@ -564,7 +650,7 @@ def _read_text_chunks_parallel(input_path, chunks, workers, total_pages, progres
 
     executor = ProcessPoolExecutor(
         max_workers=workers,
-        initializer=_init_pdf_worker,
+        initializer=_init_text_worker,
         initargs=(str(input_path),),
         max_tasks_per_child=PARALLEL_MAX_TASKS_PER_CHILD,
     )
@@ -632,7 +718,7 @@ def _collect_text_rows(input_path, progress, total_pages, on_rows):
     if total_pages is None:
         total_pages = _count_pages(input_path)
 
-    workers = _worker_count(total_pages)
+    workers = _worker_count(total_pages, TEXT_PARALLEL_MIN_PAGES)
 
     _report(progress, 8, f"Halaman 0 dari halaman {total_pages}")
 
@@ -730,24 +816,28 @@ PREVIEW_TIMED_PAGES = 5
 
 def preview_pdf_file(path):
     """Buat ringkasan PDF: jumlah halaman, sampel baris tabel, dan estimasi durasi."""
-    with pdfplumber.open(path) as pdf:
-        page_count = len(pdf.pages)
+    strategy = _detect_pdf_strategy(path)
+    lines_mode = strategy == "lines"
+    document = pdfplumber.open(path) if lines_mode else _open_text_document(path)
+
+    try:
+        page_count = _document_page_count(document)
 
         if page_count == 0:
             raise ValueError("Tidak ada halaman yang bisa dibaca dari PDF.")
 
-        strategy = _detect_pdf_strategy(path)
+        first_page = document.pages[0] if lines_mode else document[0]
 
         sample_rows = []
-        if strategy == "lines":
-            preview = pdf.pages[0].extract_tables(PDF_TABLE_SETTINGS)
+        if lines_mode:
+            preview = first_page.extract_tables(PDF_TABLE_SETTINGS)
             if preview:
                 for row in preview[0][:PREVIEW_PDF_TABLE_ROWS]:
                     sample_rows.append(
                         [(cell or "").strip() if cell else "" for cell in row]
                     )
         else:
-            for row in _extract_text_page(pdf.pages[0])[:PREVIEW_PDF_TABLE_ROWS]:
+            for row in _extract_text_page(first_page)[:PREVIEW_PDF_TABLE_ROWS]:
                 sample_rows.append([str(cell) for cell in row])
 
         if page_count > 1:
@@ -758,10 +848,10 @@ def preview_pdf_file(path):
 
             for index in range(start, start + page_count_timed):
                 try:
-                    if strategy == "lines":
-                        pdf.pages[index].extract_tables(PDF_TABLE_SETTINGS)
+                    if lines_mode:
+                        document.pages[index].extract_tables(PDF_TABLE_SETTINGS)
                     else:
-                        pdf.pages[index].extract_words()
+                        _page_words(document[index])
                 except Exception:
                     continue
 
@@ -772,6 +862,8 @@ def preview_pdf_file(path):
         else:
             timed_pages = 0
             per_page_seconds = 0.0
+    finally:
+        document.close()
 
     return {
         "page_count": page_count,
