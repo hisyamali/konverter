@@ -289,9 +289,24 @@ def _go(page: str) -> None:
     st.rerun()
 
 
-def _render_nav(user) -> None:
+def _brand_row(user, back_label=None, show_login=True, show_history=True) -> None:
+    """Baris merek + kontrol akun, dirender di bagian atas kartu hero."""
     configured = sb.is_configured()
-    columns = st.columns([2.6, 1, 1, 1.3], vertical_alignment="center")
+    slots = []
+
+    if back_label:
+        slots.append("back")
+    if user and show_history:
+        slots.append("history")
+
+    if configured and user:
+        slots.append("keluar")
+    elif configured and not user and show_login:
+        slots.append("masuk")
+    elif not configured:
+        slots.append("note")
+
+    columns = st.columns([3] + [1] * len(slots), vertical_alignment="center")
 
     with columns[0]:
         st.markdown(
@@ -300,27 +315,28 @@ def _render_nav(user) -> None:
             unsafe_allow_html=True,
         )
 
-    with columns[1]:
-        if st.button("Alat", key="kv-nav-alat"):
-            _go("home")
-
-    with columns[2]:
-        if user and st.button("Riwayat", key="kv-nav-riwayat"):
-            _go("history")
-
-    with columns[3]:
-        if not configured:
-            st.markdown('<span class="kv-nav-note">Login belum aktif</span>', unsafe_allow_html=True)
-        elif user:
-            if st.button("Keluar", key="kv-nav-auth"):
-                sb.sign_out()
-                _go("home")
-        elif st.button("Masuk", key="kv-nav-auth"):
-            _go("auth")
+    for index, slot in enumerate(slots, start=1):
+        with columns[index]:
+            if slot == "back":
+                if st.button(back_label, key="kv-nav-back"):
+                    _go("home")
+            elif slot == "history":
+                if st.button("Riwayat", key="kv-nav-riwayat"):
+                    _go("history")
+            elif slot == "masuk":
+                if st.button("Masuk", key="kv-nav-masuk"):
+                    _go("auth")
+            elif slot == "keluar":
+                if st.button("Keluar", key="kv-nav-keluar"):
+                    sb.sign_out()
+                    _go("home")
+            else:
+                st.markdown('<span class="kv-nav-note">Login belum aktif</span>', unsafe_allow_html=True)
 
 
 def _page_home(user, limit_mb: int) -> None:
     with st.container(key="kv-hero"):
+        _brand_row(user)
         st.markdown(_hero_html(), unsafe_allow_html=True)
         st.markdown(_limit_banner_html(user, limit_mb), unsafe_allow_html=True)
 
@@ -334,10 +350,6 @@ def _page_home(user, limit_mb: int) -> None:
         with pick[1]:
             if st.button("CSV ke Excel", type="primary", key="kv-pick-csv"):
                 _go("csv")
-
-        if user:
-            if st.button("Lihat riwayat konversi", key="kv-home-history"):
-                _go("history")
 
     st.markdown(_feature_html(), unsafe_allow_html=True)
 
@@ -359,10 +371,8 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
         "output_sig"
     ) == st.session_state.get("upload_sig") else (2 if st.session_state.get("converting") else 1)
 
-    if st.button("← Pilih alat lain", key="kv-nav-back"):
-        _go("home")
-
     with st.container(key="kv-hero"):
+        _brand_row(user, back_label="← Pilih alat lain")
         st.markdown(_hero_html(subtitle), unsafe_allow_html=True)
         st.markdown(_limit_banner_html(user, limit_mb), unsafe_allow_html=True)
 
@@ -513,10 +523,8 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
 
 
 def _page_auth() -> None:
-    if st.button("← Kembali", key="kv-nav-back"):
-        _go("home")
-
     with st.container(key="kv-hero"):
+        _brand_row(None, back_label="← Kembali", show_login=False)
         st.markdown(
             '<div class="kv-hero-copy"><p class="kv-eyebrow">Akun</p>'
             "<h1>Masuk untuk menyimpan riwayat.</h1>"
@@ -577,6 +585,7 @@ def _auth_error(exc: Exception) -> str:
 
 def _page_history(user) -> None:
     with st.container(key="kv-hero"):
+        _brand_row(user, back_label="← Kembali ke alat", show_history=False)
         st.markdown(
             '<div class="kv-hero-copy"><p class="kv-eyebrow">Riwayat</p>'
             "<h1>Konversi yang kamu simpan.</h1>"
@@ -641,10 +650,6 @@ if user is None and st.session_state.get("kv_page") == "history":
 
 page = st.session_state.setdefault("kv_page", "home")
 limit_mb = USER_MAX_MB if user else GUEST_MAX_MB
-
-st.markdown('<div class="kv-topbar">', unsafe_allow_html=True)
-_render_nav(user)
-st.markdown("</div>", unsafe_allow_html=True)
 
 if page in ("pdf", "csv"):
     _page_tool("pdf-to-excel" if page == "pdf" else "csv-to-excel", user, limit_mb)

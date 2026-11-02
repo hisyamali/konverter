@@ -378,10 +378,6 @@ div[data-baseweb="select"] > div {
 }
 
 /* --- Top bar & navigasi --- */
-.kv-topbar {
-    margin-bottom: 22px;
-}
-
 .kv-brand {
     display: flex;
     align-items: center;
@@ -427,10 +423,10 @@ div[data-baseweb="select"] > div {
     font-weight: 800;
 }
 
-.st-key-kv-nav-alat button,
+.st-key-kv-nav-back button,
 .st-key-kv-nav-riwayat button,
-.st-key-kv-nav-auth button,
-.st-key-kv-nav-back button {
+.st-key-kv-nav-masuk button,
+.st-key-kv-nav-keluar button {
     width: auto !important;
     min-height: 42px !important;
     padding: 0 16px !important;
@@ -442,8 +438,8 @@ div[data-baseweb="select"] > div {
     font-weight: 800 !important;
 }
 
-.st-key-kv-nav-back {
-    margin-bottom: 14px;
+.st-key-kv-hero .kv-brand {
+    margin: 0 0 4px;
 }
 
 /* --- Home: banner batas & kartu alat --- */
