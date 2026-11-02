@@ -442,6 +442,14 @@ div[data-baseweb="select"] > div {
     margin: 0 0 4px;
 }
 
+/* Tombol akun rata kanan di baris header hero */
+.st-key-kv-nav-masuk,
+.st-key-kv-nav-keluar,
+.st-key-kv-nav-riwayat {
+    display: flex;
+    justify-content: flex-end;
+}
+
 /* --- Home: banner batas & kartu alat --- */
 .kv-limit-banner {
     margin: 6px 0 4px;
