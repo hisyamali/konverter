@@ -165,8 +165,9 @@ Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, j
 | `KONVERTER_TEXT_MIN_PARALLEL_PAGES` | `400` | Ambang halaman minimal jalur teks sebelum memakai worker paralel (di bawah ini sekuensial lebih cepat karena jalur teks sudah ±5 ms/halaman). Otomatis `12` bila PyMuPDF tidak tersedia |
 | `KONVERTER_MAX_WORKERS` | core fisik | Batas atas worker paralel untuk PDF besar. Default = jumlah core fisik (mis. 6); worker aktual tetap dipilih otomatis dari RAM kosong. Paksakan nilai (1–12) untuk mengendalikan beban |
 | `KONVERTER_MAX_WORKERS_CAP` | `8` | Batas keras worker saat default otomatis dipakai |
-| `KONVERTER_CHUNK_PAGES` | `20` | Halaman per tugas worker |
+| `KONVERTER_CHUNK_PAGES` | `10` | Halaman per tugas worker. Lebih kecil = progress & ETA lebih halus dan beban memori buffer lebih rendah; terukur tidak memperlambat jalur teks (10 dan 5 halaman sama cepat atau lebih cepat dari 20) |
 | `KONVERTER_TASKS_PER_CHILD` | `32` | Jumlah tugas sebelum worker proses di-recycle (menjaga memori worker tetap datar) |
+| `KONVERTER_PROGRESS_PAGE_STEP` | `5` | Langkah halaman minimal sebelum pesan progress "Halaman X dari Y" dikirim ke UI (dipakai untuk progress & ETA). Kecilkan untuk update lebih rapat, besarkan untuk lebih hemat |
 | `KONVERTER_MEM_GB_PER_WORKER` | `0.15` | Perkiraan RAM per worker (GB) untuk memilih jumlah worker |
 | `KONVERTER_MEM_RESERVE_GB` | `0.4` | RAM yang selalu disisakan (GB) untuk aplikasi lain |
 | `KONVERTER_MEM_FLOOR_GB` | `0.35` | Ambang RAM kosong (GB): bila turun di bawah ini, konversi beralih ke mode hemat (sekuensial) |

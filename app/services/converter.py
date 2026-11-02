@@ -5,6 +5,7 @@ import math
 import os
 import re
 import time
+import weakref
 from concurrent.futures import ProcessPoolExecutor, TimeoutError, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from decimal import Decimal, InvalidOperation
@@ -122,7 +123,7 @@ def _physical_cores():
 
 PARALLEL_MIN_PAGES = 12
 PARALLEL_MAX_WORKERS_CAP = int(os.environ.get("KONVERTER_MAX_WORKERS_CAP", "8"))
-PARALLEL_CHUNK_PAGES = int(os.environ.get("KONVERTER_CHUNK_PAGES", "20"))
+PARALLEL_CHUNK_PAGES = int(os.environ.get("KONVERTER_CHUNK_PAGES", "10"))
 PARALLEL_MAX_TASKS_PER_CHILD = int(os.environ.get("KONVERTER_TASKS_PER_CHILD", "32"))
 # Jalur teks memakai PyMuPDF (±5 ms/halaman), sehingga proses paralel baru
 # menguntungkan untuk dokumen sangat tebal; di bawah itu overhead spawn lebih besar.
@@ -135,6 +136,10 @@ PARALLEL_MEMORY_GB_PER_WORKER = float(os.environ.get("KONVERTER_MEM_GB_PER_WORKE
 PARALLEL_MEMORY_RESERVE_GB = float(os.environ.get("KONVERTER_MEM_RESERVE_GB", "0.4"))
 PARALLEL_MEMORY_FLOOR_GB = float(os.environ.get("KONVERTER_MEM_FLOOR_GB", "0.35"))
 POLITE_MODE = os.environ.get("KONVERTER_POLITE", "1") not in ("0", "false", "False")
+
+# Pesan "Halaman X dari Y" hanya dikirim saat kemajuan melewati langkah ini;
+# dijaga lebih kecil dari ukuran chunk agar tiap chunk selesai tetap dilaporkan.
+PROGRESS_PAGE_STEP = int(os.environ.get("KONVERTER_PROGRESS_PAGE_STEP", "5"))
 
 _workers_override = int(os.environ.get("KONVERTER_MAX_WORKERS", "0") or "0")
 PARALLEL_MAX_WORKERS = (
@@ -765,27 +770,43 @@ def _status_message(pages_read, total_pages):
     return f"Halaman {pages_read} dari halaman {total_pages}"
 
 
-_PAGE_STATUS_RE = re.compile(r"^Halaman \d+ dari halaman \d+$")
-_progress_state = {}
+_PAGE_STATUS_RE = re.compile(r"^Halaman (\d+) dari halaman (\d+)$")
+_progress_state = weakref.WeakKeyDictionary()
+
+
+def _should_report_pages(progress, pages):
+    """Cek apakah kemajuan halaman sudah cukup jauh untuk dikirim ke frontend."""
+    try:
+        last_pages = _progress_state.get(progress)
+    except TypeError:
+        return True
+
+    if last_pages is not None and pages - last_pages < PROGRESS_PAGE_STEP:
+        return False
+
+    try:
+        _progress_state[progress] = pages
+    except TypeError:
+        pass
+
+    return True
 
 
 def _report(progress, percent, message):
     """Panggil callback progress jika pemanggil menyediakannya.
 
-    Update "Halaman X dari Y" di-throttle agar hanya terkirim saat persentase
-    naik minimal 1%, sementara pesan fase/error tetap selalu terkirim.
+    Pesan "Halaman X dari Y" di-throttle agar hanya terkirim saat kemajuan
+    halaman melewati ``PROGRESS_PAGE_STEP``, sementara pesan fase/error lain
+    tetap selalu terkirim.
     """
     if progress is None:
         return
 
-    key = id(progress)
-    last_percent = _progress_state.get(key)
+    match = _PAGE_STATUS_RE.match(message) if message else None
 
-    is_page_status = bool(message and _PAGE_STATUS_RE.match(message))
-    if is_page_status and last_percent is not None and int(percent) == last_percent:
+    if match and not _should_report_pages(progress, int(match.group(1))):
         return
 
-    _progress_state[key] = int(percent)
     progress(percent, message)
 
 
