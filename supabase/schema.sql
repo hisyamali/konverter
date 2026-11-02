@@ -73,6 +73,15 @@ create policy jobs_delete_own on public.jobs
     for delete using (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
+-- 2b. Izin API (aman dijalankan berulang)
+-- ---------------------------------------------------------------------------
+-- Penting bila opsi "Automatically expose new tables" DIMATIKAN saat membuat
+-- proyek: tabel baru tidak otomatis diberi izin, sehingga role terautentikasi
+-- perlu GRANT eksplisit. Baris ini membuat skema bekerja pada kedua kondisi.
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.jobs to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- 3. Bucket privat + kebijakan storage
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public)
