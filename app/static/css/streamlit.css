@@ -124,6 +124,10 @@ footer {
     color: #ffffff;
 }
 
+.kv-steps-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
 [data-testid="stWidgetLabel"] p,
 .stSelectbox label,
 .stFileUploader label {
@@ -373,6 +377,209 @@ div[data-baseweb="select"] > div {
     border-radius: 14px;
 }
 
+/* --- Top bar & navigasi --- */
+.kv-topbar {
+    margin-bottom: 22px;
+}
+
+.kv-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.kv-brand-mark {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #1b49d8, #16213e);
+    color: #ffffff;
+    font-weight: 900;
+    font-size: 1.15rem;
+    box-shadow: 0 12px 26px rgba(27, 73, 216, 0.3);
+}
+
+.kv-brand-text {
+    display: flex;
+    flex-direction: column;
+    font-weight: 900;
+    font-size: 1.05rem;
+    color: var(--kv-ink);
+    line-height: 1.1;
+}
+
+.kv-brand-text small {
+    color: var(--kv-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.kv-nav-note {
+    display: inline-block;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: #eef2f9;
+    color: #7d8aa1;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.st-key-kv-nav-alat button,
+.st-key-kv-nav-riwayat button,
+.st-key-kv-nav-auth button,
+.st-key-kv-nav-back button {
+    width: auto !important;
+    min-height: 42px !important;
+    padding: 0 16px !important;
+    border: 1px solid var(--kv-line) !important;
+    border-radius: 12px !important;
+    background: #ffffff !important;
+    color: var(--kv-navy) !important;
+    box-shadow: none !important;
+    font-weight: 800 !important;
+}
+
+.st-key-kv-nav-back {
+    margin-bottom: 14px;
+}
+
+/* --- Home: banner batas & kartu alat --- */
+.kv-limit-banner {
+    margin: 6px 0 4px;
+    padding: 12px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--kv-blue-soft);
+    background: #f2f6ff;
+    color: #33415a;
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+
+.kv-limit-banner.is-user {
+    border-color: #bfe3c8;
+    background: #f1fbf4;
+}
+
+.kv-limit-tag {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--kv-navy);
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+}
+
+.kv-section-title {
+    margin: 22px 0 12px;
+    font-size: 1.05rem;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    color: var(--kv-ink);
+}
+
+.kv-tool-heading {
+    margin: 0 0 12px;
+    font-size: 1.15rem;
+    font-weight: 900;
+    color: var(--kv-ink);
+}
+
+.kv-tool-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.kv-tool-card {
+    padding: 20px;
+    border-radius: 22px;
+    border: 1px solid var(--kv-border);
+    background: #ffffff;
+    box-shadow: 0 12px 30px rgba(55, 76, 118, 0.08);
+}
+
+.kv-tool-icon {
+    display: inline-grid;
+    place-items: center;
+    min-width: 52px;
+    padding: 7px 10px;
+    border-radius: 12px;
+    background: var(--kv-blue-soft);
+    color: var(--kv-blue-ink);
+    font-size: 0.76rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+}
+
+.kv-tool-card h3 {
+    margin: 14px 0 8px;
+    font-size: 1.05rem;
+    color: var(--kv-ink);
+}
+
+.kv-tool-card p {
+    margin: 0;
+    color: var(--kv-muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+/* --- Riwayat --- */
+.kv-history-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 0;
+}
+
+.kv-job-name {
+    font-weight: 800;
+    color: var(--kv-ink);
+    overflow-wrap: anywhere;
+}
+
+.kv-job-status {
+    padding: 5px 11px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.03em;
+    background: #eef2f9;
+    color: #5d6b82;
+}
+
+.kv-job-status.is-completed {
+    background: #e6f7ec;
+    color: #15803d;
+}
+
+.kv-job-status.is-processing {
+    background: #fff4e5;
+    color: #b45309;
+}
+
+.kv-job-status.is-failed {
+    background: #ffe9ec;
+    color: #be123c;
+}
+
+[data-testid="stLinkButton"] a {
+    min-height: 44px;
+    border-radius: 12px !important;
+    border: 1px solid var(--kv-line) !important;
+    background: #ffffff !important;
+    color: var(--kv-navy) !important;
+    font-weight: 800 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 @media (max-width: 780px) {
     .block-container {
         padding: 18px 12px !important;
@@ -388,7 +595,8 @@ div[data-baseweb="select"] > div {
     }
 
     .kv-steps,
-    .kv-feature-grid {
+    .kv-feature-grid,
+    .kv-tool-grid {
         grid-template-columns: 1fr;
     }
 }
