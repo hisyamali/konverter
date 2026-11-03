@@ -6,4 +6,6 @@ services:
       - "5000:7860"
     environment:
       - KONVERTER_MAX_WORKERS=2
+      - KONVERTER_MAX_CONCURRENT=4
+      - KONVERTER_QUEUE_WAIT_SECONDS=900
       - KONVERTER_MAX_UPLOAD_MB=128

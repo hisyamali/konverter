@@ -77,27 +77,69 @@ Aplikasi ini adalah **server Flask**, sehingga tidak bisa di-hosting di GitHub P
 
 ## Aplikasi Streamlit (opsional)
 
-Selain antarmuka Flask, repositori menyertakan varian **Streamlit** (`streamlit_app.py`) yang memakai ulang logika konversi yang sama (`app/services/converter.py`). Tampilannya meniru UI Flask (hero, stepper 2 langkah, kartu pratinjau, overlay progress + ETA, feature grid) melalui `app/static/css/streamlit.css`.
+Selain antarmuka Flask, repositori menyertakan varian **Streamlit** (`streamlit_app.py`) yang memakai ulang logika konversi yang sama (`app/services/converter.py`). Alur UX-nya mengikuti gaya **iLovePDF**: beranda berisi pilihan alat → halaman alat (unggah → pratinjau → konversi → unduh) → riwayat. Tampilan memakai `app/static/css/streamlit.css` (hero, stepper 3 langkah, kartu alat, kartu pratinjau, overlay progress + ETA, feature grid).
 
 ```bash
 pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-Buka <http://localhost:8501>. Alur sama: unggah → pratinjau → konversi → unduh `.xlsx`. Jalankan dari **root repo** agar `.streamlit/config.toml` terbaca.
+Buka <http://localhost:8501>. Jalankan dari **root repo** agar `.streamlit/config.toml` dan `.streamlit/secrets.toml` terbaca.
+
+### Tamu vs pengguna login
+
+| | Tanpa login (tamu) | Setelah login |
+| --- | --- | --- |
+| Konversi | Ya | Ya |
+| Batas unggahan | **10 MB** (`KONVERTER_GUEST_MAX_UPLOAD_MB`) | **50 MB** (`KONVERTER_USER_MAX_UPLOAD_MB`) |
+| File sumber | Diproses sementara di server, **tidak** disimpan ke database/storage; dihapus saat sesi berakhir atau file diganti | Disimpan di bucket privat `sources` |
+| Hasil `.xlsx` | Hanya diunduh (byte di memori sesi) | Disimpan di bucket privat `results` + bisa diunduh ulang |
+| Riwayat | Tidak ada | Ada (unduh ulang / hapus) |
+
+Batas ukuran dicek di aplikasi **sebelum** konversi; batas keras server tetap `maxUploadSize = 50` di `.streamlit/config.toml`. Tanpa konfigurasi Supabase, aplikasi otomatis berjalan **mode tamu saja** (menu Masuk/Riwayat disembunyikan).
 
 ### Deploy ke Streamlit Community Cloud (gratis)
 
 1. Push repo ke GitHub (publik).
 2. Buka <https://share.streamlit.io> → **New app**.
 3. Pilih repo `hisyamali/konverter`, branch `main`, main file **`streamlit_app.py`**.
-4. Pilih subdomain (mis. `all-convert.streamlit.app`) → **Deploy**.
+4. (Opsional, untuk login + riwayat) **Advanced settings → Secrets**, tempel blok `[supabase]` (lihat bagian berikut).
+5. Pilih subdomain (mis. `all-convert.streamlit.app`) → **Deploy**.
 
 Catatan batas Community Cloud:
 - CPU maks 2 core, RAM maks ~2.7 GB → app memakai `KONVERTER_MAX_WORKERS=2` di Linux/Cloud (otomatis `1` di Windows lokal agar stabil).
-- Batas unggah **50 MB** (`maxUploadSize` di `.streamlit/config.toml`).
+- Batas unggah **50 MB** (`maxUploadSize` di `.streamlit/config.toml`); tamu dibatasi 10 MB di aplikasi.
 - App **tidur setelah 12 jam** tanpa trafik dan **tidak mendukung custom domain**.
 - Overlay progress bergantung pada CSS Streamlit (`data-testid`); versi Streamlit dipin `1.66.1` agar tampilan stabil.
+
+### Akun, riwayat & penyimpanan (Supabase)
+
+Login, riwayat, dan penyimpanan hasil memakai **Supabase** (Auth + Postgres + Storage). Isi file ini opsional — tanpa itu aplikasi tetap jalan dalam mode tamu.
+
+**1. Buat proyek Supabase** (gratis, tanpa kartu kredit) di <https://supabase.com>, lalu:
+
+- **SQL Editor → New query**, tempel isi `supabase/schema.sql`, klik **Run**. Ini membuat tabel `public.jobs`, mengaktifkan **Row Level Security**, serta bucket privat `sources` dan `results`.
+- **Project Settings → API**, salin **Project URL** dan **anon public key**.
+
+**2. Isi kredensial**
+
+Lokal — salin `.streamlit/secrets.toml.example` menjadi `.streamlit/secrets.toml` (sudah di-`.gitignore`) lalu isi:
+
+```toml
+[supabase]
+url = "https://<project-ref>.supabase.co"
+anon_key = "<anon-public-key>"
+```
+
+Streamlit Community Cloud — **App settings → Secrets**, tempel blok yang sama. Alternatif lain: set env var `SUPABASE_URL` dan `SUPABASE_ANON_KEY`.
+
+> **Keamanan**: hanya **anon key** yang dipakai (aman di klien karena RLS membatasi akses per pengguna). **Jangan** menaruh `service_role` key di aplikasi ini. Bucket `sources`/`results` privat — unduhan memakai *signed URL* berumur 1 jam.
+
+**3. (Opsional) Konfirmasi email**: di **Authentication → Providers → Email**, matikan "Confirm email" bila ingin pengguna langsung aktif saat mendaftar, atau biarkan aktif agar Streamlit menampilkan pesan "cek email".
+
+**Skema data**: tabel `jobs` menyimpan `user_id`, `conversion_type`, `original_name`, `source_path`, `result_path`, ukuran file, `status` (`processing`/`completed`/`failed`), `error`, `page_count`, `row_count`, dan `duration_ms`. Path objek storage mengikuti pola `<user_id>/<job_id>/<nama-file>` sehingga kebijakan RLS hanya mengizinkan pemilik folder masing-masing.
+
+> Fitur akun, riwayat, dan batas ukuran bertingkat hanya ada di **varian Streamlit**. UI Flask tetap tanpa login (batas tunggal `KONVERTER_MAX_UPLOAD_MB`).
 
 ### Menjaga app tetap bangun (keep-alive)
 
@@ -161,10 +203,17 @@ Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, j
 | Variabel lingkungan | Default | Keterangan |
 | --- | --- | --- |
 | `KONVERTER_MAX_UPLOAD_MB` | `128` | Batas ukuran file unggahan (MB) |
+| `KONVERTER_GUEST_MAX_UPLOAD_MB` | `10` | Batas unggahan untuk **tamu** (tanpa login) di varian Streamlit |
+| `KONVERTER_USER_MAX_UPLOAD_MB` | `50` | Batas unggahan untuk pengguna yang **login** di varian Streamlit |
+| `SUPABASE_URL` | *(kosong)* | Project URL Supabase (alternatif blok `[supabase]` di `secrets.toml`). Kosong = mode tamu saja |
+| `SUPABASE_ANON_KEY` | *(kosong)* | anon public key Supabase. Jangan pakai `service_role` |
 | `KONVERTER_PDF_WORDS` | `1` | Pakai PyMuPDF untuk ekstraksi **teks** PDF (jauh lebih cepat, ±20×). Set `0` untuk kembali sepenuhnya ke `pdfplumber` |
-| `KONVERTER_TEXT_MIN_PARALLEL_PAGES` | `400` | Ambang halaman minimal jalur teks sebelum memakai worker paralel (di bawah ini sekuensial lebih cepat karena jalur teks sudah ±5 ms/halaman). Otomatis `12` bila PyMuPDF tidak tersedia |
+| `KONVERTER_MIN_PARALLEL_PAGES` | `60` | Ambang halaman minimal PDF bergaris sebelum memakai worker paralel; di bawahnya sekuensial lebih cepat karena biaya spawn proses |
+| `KONVERTER_TEXT_MIN_PARALLEL_PAGES` | `1000` | Ambang halaman minimal jalur teks sebelum memakai worker paralel (PyMuPDF sangat cepat sehingga dokumen lebih kecil sebaiknya sekuensial). Otomatis mengikuti ambang bergaris bila PyMuPDF tidak tersedia |
 | `KONVERTER_MAX_WORKERS` | core fisik | Batas atas worker paralel untuk PDF besar. Default = jumlah core fisik (mis. 6); worker aktual tetap dipilih otomatis dari RAM kosong. Paksakan nilai (1–12) untuk mengendalikan beban |
 | `KONVERTER_MAX_WORKERS_CAP` | `8` | Batas keras worker saat default otomatis dipakai |
+| `KONVERTER_MAX_CONCURRENT` | `4` | Jumlah maksimum konversi yang berjalan bersamaan; permintaan berikutnya menunggu antrean |
+| `KONVERTER_QUEUE_WAIT_SECONDS` | `900` | Batas waktu menunggu slot konversi sebelum server mengembalikan HTTP 429 |
 | `KONVERTER_CHUNK_PAGES` | `10` | Halaman per tugas worker. Lebih kecil = progress & ETA lebih halus dan beban memori buffer lebih rendah; terukur tidak memperlambat jalur teks (10 dan 5 halaman sama cepat atau lebih cepat dari 20) |
 | `KONVERTER_TASKS_PER_CHILD` | `32` | Jumlah tugas sebelum worker proses di-recycle (menjaga memori worker tetap datar) |
 | `KONVERTER_PROGRESS_PAGE_STEP` | `5` | Langkah halaman minimal sebelum pesan progress "Halaman X dari Y" dikirim ke UI (dipakai untuk progress & ETA). Kecilkan untuk update lebih rapat, besarkan untuk lebih hemat |
@@ -177,7 +226,9 @@ Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, j
 | `LOG_CHANNEL` | `stack` | Channel log: `stack` (console+file), `daily`, `single`, `console` |
 | `LOG_VIEWER_AUTH` | *(kosong)* | Basic auth untuk `/logs` (format `user:pass`) |
 
-> **Jumlah worker dinamis**: tiap konversi memilih worker = min(core fisik, `KONVERTER_MAX_WORKERS`, RAM kosong/`KONVERTER_MEM_GB_PER_WORKER`). Semakin banyak RAM bebas, semakin banyak worker → semakin cepat. Contoh di mesin 6 core: RAM bebas 0,8 GB → 2 worker; 1,0 GB → 4 worker; ≥1,5 GB → 6 worker.
+> **Jumlah worker dinamis**: tiap konversi memilih worker = min(core fisik, `KONVERTER_MAX_WORKERS`, RAM kosong/`KONVERTER_MEM_GB_PER_WORKER`), lalu membagi anggaran worker berdasarkan jumlah konversi aktif. Jika RAM bebas di bawah kebutuhan minimum untuk proses anak, pembacaan PDF berjalan sekuensial untuk menghindari swap.
+>
+> **Antrean**: maksimum `KONVERTER_MAX_CONCURRENT` konversi aktif per proses aplikasi. Request selanjutnya menunggu slot dan progress menampilkan posisi antrean. Untuk konfigurasi Gunicorn multi-process, limiter ini berlaku per proses; gunakan satu worker Gunicorn dengan beberapa thread agar batasnya global pada instance tunggal.
 >
 > **Guard memori (mode hemat)**: saat konversi berjalan, bila RAM kosong turun di bawah `KONVERTER_MEM_FLOOR_GB`, aplikasi menghentikan worker paralel dan melanjutkan sisa halaman secara sekuensial (`memori menipis, beralih ke mode hemat`) — mesin tetap responsif dan proses tetap selesai. Perilaku serupa berlaku bila paralel macet >90 detik.
 
@@ -199,7 +250,10 @@ konverter/
 ├── docker-compose.yml      # Menjalankan via Docker Compose
 ├── .dockerignore
 ├── .streamlit/
-│   └── config.toml         # Konfigurasi Streamlit (maxUploadSize 50 MB, tema)
+│   ├── config.toml         # Konfigurasi Streamlit (maxUploadSize 50 MB, tema)
+│   └── secrets.toml.example # Template secrets (Supabase URL/anon key) — salin ke secrets.toml
+├── supabase/
+│   └── schema.sql          # Skema Postgres: tabel jobs + RLS + bucket sources/results
 ├── requirements.txt
 ├── .devcontainer/
 │   ├── devcontainer.json       # Konfigurasi GitHub Codespaces (port publik)
@@ -228,6 +282,8 @@ konverter/
 │   └── services/
 │       ├── converter.py    # Logika konversi CSV/PDF → Excel, ekstraksi tabel
 │       ├── eta.py          # Perhitungan progress/ETA (dipakai Flask & Streamlit)
+│       ├── concurrency.py  # Pembatas/antrean konversi bersamaan
+│       ├── supabase_store.py # Integrasi Supabase (auth, tabel jobs, storage) — Streamlit
 │       ├── previews.py     # Registrasi/pratinjau temp, pembersihan TTL
 │       └── progress.py     # Status pekerjaan konversi (in-memory)
 └── storage/

@@ -12,6 +12,7 @@ os.environ.setdefault("KONVERTER_MAX_UPLOAD_MB", "50")
 import streamlit as st
 
 from app.services import supabase_store as sb
+from app.services.concurrency import QueueTimeout, conversion_slot
 from app.services.converter import (
     convert_csv_to_excel,
     convert_pdf_to_excel,
@@ -449,6 +450,12 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
     def on_update(percent, message, eta, elapsed):
         overlay.markdown(_overlay_html(percent, message, eta, elapsed), unsafe_allow_html=True)
 
+    def on_wait(waited, position):
+        overlay.markdown(
+            _overlay_html(0, f"Menunggu antrean (posisi {position})", None, waited),
+            unsafe_allow_html=True,
+        )
+
     reporter = ProgressReporter(on_update)
     page_count = preview_data.get("page_count") if kind == "pdf-to-excel" else None
     output_name = f"{Path(uploaded.name).stem}.xlsx"
@@ -478,10 +485,11 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
             st.warning(f"Gagal menyimpan sumber ke riwayat: {exc}")
 
     try:
-        if kind == "csv-to-excel":
-            convert_csv_to_excel(input_path, output_path, reporter)
-        else:
-            convert_pdf_to_excel(input_path, output_path, reporter, total_pages=page_count)
+        with conversion_slot(on_wait=on_wait):
+            if kind == "csv-to-excel":
+                convert_csv_to_excel(input_path, output_path, reporter)
+            else:
+                convert_pdf_to_excel(input_path, output_path, reporter, total_pages=page_count)
 
         result_bytes = Path(output_path).read_bytes()
         st.session_state["output_bytes"] = result_bytes
@@ -510,6 +518,9 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
     except ValueError as exc:
         sb.finish_job(job_id, "failed", error=str(exc))
         st.error(str(exc))
+    except QueueTimeout as exc:
+        sb.finish_job(job_id, "failed", error=str(exc))
+        st.warning(str(exc))
     except Exception as exc:
         sb.finish_job(job_id, "failed", error=str(exc))
         st.error(f"Konversi gagal: {exc}")

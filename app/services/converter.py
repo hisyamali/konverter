@@ -15,6 +15,8 @@ import pdfplumber
 from flask import current_app, has_app_context
 from openpyxl import Workbook
 
+from app.services import concurrency
+
 try:
     import pymupdf
 except ImportError:
@@ -121,14 +123,16 @@ def _physical_cores():
     return max(1, logical // 2)
 
 
-PARALLEL_MIN_PAGES = 12
+# Ambang ini sengaja tinggi: spawn proses mahal (5-10 dtk saat RAM tertekan),
+# jadi dokumen di bawah ambang lebih cepat diproses sekuensial.
+PARALLEL_MIN_PAGES = int(os.environ.get("KONVERTER_MIN_PARALLEL_PAGES", "60"))
 PARALLEL_MAX_WORKERS_CAP = int(os.environ.get("KONVERTER_MAX_WORKERS_CAP", "8"))
 PARALLEL_CHUNK_PAGES = int(os.environ.get("KONVERTER_CHUNK_PAGES", "10"))
 PARALLEL_MAX_TASKS_PER_CHILD = int(os.environ.get("KONVERTER_TASKS_PER_CHILD", "32"))
 # Jalur teks memakai PyMuPDF (±5 ms/halaman), sehingga proses paralel baru
 # menguntungkan untuk dokumen sangat tebal; di bawah itu overhead spawn lebih besar.
 TEXT_PARALLEL_MIN_PAGES = int(
-    os.environ.get("KONVERTER_TEXT_MIN_PARALLEL_PAGES", "400" if FAST_WORDS_AVAILABLE else str(PARALLEL_MIN_PAGES))
+    os.environ.get("KONVERTER_TEXT_MIN_PARALLEL_PAGES", "1000" if FAST_WORDS_AVAILABLE else str(PARALLEL_MIN_PAGES))
 )
 PARALLEL_STALL_REPORT_SECONDS = 45
 PARALLEL_DEGRADE_SECONDS = 90
@@ -257,11 +261,11 @@ def _collect_pdf_tables(input_path, progress, total_pages, on_tables):
     if total_pages is None:
         total_pages = _count_pages(input_path)
 
-    workers = _worker_count(total_pages)
+    workers, use_pool = _plan_read(total_pages)
 
     _report(progress, 8, f"Halaman 0 dari halaman {total_pages}")
 
-    if workers == 1:
+    if not use_pool:
         _read_pages_sequential(input_path, total_pages, progress, on_tables)
         return
 
@@ -323,9 +327,13 @@ def _page_words(page):
 
 
 def _worker_count(total_pages, minimum=PARALLEL_MIN_PAGES):
-    """Tentukan jumlah worker paralel berdasarkan halaman, CPU, dan memori kosong."""
+    """Tentukan jumlah worker paralel; 0 berarti cukup diproses sekuensial.
+
+    Angka ini belum memperhitungkan konversi lain yang sedang berjalan; lihat
+    ``_plan_read`` untuk pembagian worker antar konversi.
+    """
     if total_pages <= minimum:
-        return 1
+        return 0
 
     logical = os.cpu_count() or 1
     workers = min(logical, PARALLEL_MAX_WORKERS)
@@ -336,6 +344,40 @@ def _worker_count(total_pages, minimum=PARALLEL_MIN_PAGES):
         workers = min(workers, max(by_memory, 1))
 
     return max(1, workers)
+
+
+def _spawn_allowed():
+    """Cek apakah RAM masih cukup untuk menambah satu proses worker."""
+    available_gb = _available_memory_gb()
+
+    if available_gb is None:
+        return True
+
+    return available_gb >= PARALLEL_MEMORY_RESERVE_GB + PARALLEL_MEMORY_GB_PER_WORKER
+
+
+def _plan_read(total_pages, minimum=PARALLEL_MIN_PAGES):
+    """Tentukan rencana pembacaan PDF: ``(workers, pakai_proses)``.
+
+    - Bila RAM tidak cukup untuk satu proses anak, semua dikerjakan di proses
+      web (sekuensial) agar tidak memicu swap.
+    - Dokumen di bawah ambang, atau yang hanya kebagian satu worker, tetap
+      sekuensial selama tidak ada konversi lain. Saat ada konversi lain, satu
+      proses anak dipakai agar pekerjaan tiap user tidak berebut GIL
+      (pdfplumber/pdfminer murni Python).
+    - Dokumen besar memakai beberapa worker, dibagi rata dengan konversi lain
+      yang aktif sehingga total proses mendekati jumlah core.
+    """
+    if not _spawn_allowed():
+        return 1, False
+
+    base = _worker_count(total_pages, minimum)
+    others_running = concurrency.active_conversions() > 1
+
+    if base <= 1:
+        return (1, True) if others_running else (1, False)
+
+    return max(1, concurrency.worker_budget(base)), True
 
 
 def _memory_pressure():
@@ -723,11 +765,11 @@ def _collect_text_rows(input_path, progress, total_pages, on_rows):
     if total_pages is None:
         total_pages = _count_pages(input_path)
 
-    workers = _worker_count(total_pages, TEXT_PARALLEL_MIN_PAGES)
+    workers, use_pool = _plan_read(total_pages, TEXT_PARALLEL_MIN_PAGES)
 
     _report(progress, 8, f"Halaman 0 dari halaman {total_pages}")
 
-    if workers == 1:
+    if not use_pool:
         _read_text_pages_sequential(input_path, total_pages, progress, on_rows)
         return
 

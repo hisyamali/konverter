@@ -30,8 +30,22 @@ const FADE_OUT_DELAY = 700;
 const FAKE_PERCENT_CEILING = 10;
 const FAKE_PROGRESS_INTERVAL_MS = 900;
 
+// Animasi progress: bar mengalir menuju angka server, tidak melompat tiap chunk.
+const PROGRESS_RISE_PER_SECOND = 45;   // kecepatan maksimum bar naik (%/detik)
+const PROGRESS_DRIFT_GAP = 2;          // maksimum bar mendahului angka server terakhir (%)
+const PROGRESS_DRIFT_CEILING = 84;     // plafon fase baca agar tidak meleset jauh
+const PROGRESS_STALL_MS = 1200;        // mulai menyusul setelah server sepi selama ini
+const PROGRESS_HISTORY = 12;           // jumlah update server untuk menaksir laju
+
 // Menyimpan state sementara selama upload, pratinjau, dan konversi berjalan.
-let currentPercent = 0;
+let currentPercent = 0;      // persen yang sedang digambar (boleh pecahan)
+let targetPercent = 0;       // persen terakhir dari server (atau progress semu)
+let paintedPercent = -1;     // angka bulat terakhir yang ditulis ke label
+let progressFrame = null;
+let progressFrameAt = 0;
+let progressStalledAt = 0;
+let serverHistory = [];
+let etaAnchor = null;        // {seconds, at} untuk hitung mundur lokal
 let fakeTimer = null;
 let hideTimer = null;
 let previewXhr = null;
@@ -41,7 +55,13 @@ let lastElapsed = null;
 function openOverlay() {
     // Menampilkan modal progress dan mengatur ulang status proses konversi.
     clearTimeout(hideTimer);
+    stopProgressAnimation();
     currentPercent = 0;
+    targetPercent = 0;
+    paintedPercent = -1;
+    serverHistory = [];
+    etaAnchor = null;
+    progressStalledAt = performance.now();
     lastElapsed = null;
     errorLabel.hidden = true;
     errorLabel.textContent = "";
@@ -51,9 +71,10 @@ function openOverlay() {
     etaRunningLabel.textContent = "";
     closeButton.hidden = true;
     messageLabel.textContent = "Menyiapkan file";
-    renderProgress(0);
+    paintProgress();
     overlay.hidden = false;
     requestAnimationFrame(() => overlay.classList.add("is-visible"));
+    startProgressAnimation();
     startFakeProgress();
     setStepActive("convert");
 }
@@ -61,33 +82,145 @@ function openOverlay() {
 function closeOverlay() {
     // Menutup modal progress dengan transisi fade-out.
     stopFakeProgress();
+    stopProgressAnimation();
     overlay.classList.remove("is-visible");
     hideTimer = setTimeout(() => {
         overlay.hidden = true;
     }, FADE_OUT_DELAY);
 }
 
-function renderProgress(percent) {
-    // Menggambar progress bar tanpa pernah menurunkan persentase yang sudah tampil.
-    const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
-    currentPercent = Math.max(currentPercent, safePercent);
+function paintProgress() {
+    // Menggambar bar pada posisi animasi saat ini, tanpa pernah menurunkan nilai.
+    const shown = Math.max(0, Math.min(100, Math.round(currentPercent)));
+
+    if (shown !== paintedPercent) {
+        paintedPercent = shown;
+        percentLabel.textContent = shown;
+        track.setAttribute("aria-valuenow", shown);
+    }
+
     bar.style.width = `${currentPercent}%`;
-    percentLabel.textContent = currentPercent;
-    track.setAttribute("aria-valuenow", currentPercent);
+}
+
+function renderProgress(percent) {
+    // Menerima target persen baru (server atau progress semu) dan menjalankan animasi.
+    const value = Number(percent);
+    targetPercent = Math.max(targetPercent, Number.isFinite(value) ? value : 0);
+    startProgressAnimation();
+}
+
+function startProgressAnimation() {
+    // Menjalankan loop animasi bar selama modal progress terbuka.
+    if (progressFrame !== null) {
+        return;
+    }
+
+    progressFrameAt = 0;
+    progressFrame = requestAnimationFrame(tickProgress);
+}
+
+function stopProgressAnimation() {
+    // Menghentikan loop animasi agar tidak berjalan saat modal tertutup.
+    if (progressFrame !== null) {
+        cancelAnimationFrame(progressFrame);
+        progressFrame = null;
+    }
+}
+
+function serverRate() {
+    // Menaksir laju progress server (persen per detik) dari beberapa update terakhir.
+    if (serverHistory.length < 2) {
+        return 0;
+    }
+
+    const first = serverHistory[0];
+    const last = serverHistory[serverHistory.length - 1];
+    const seconds = (last.at - first.at) / 1000;
+    const gained = last.percent - first.percent;
+
+    if (seconds <= 0 || gained <= 0) {
+        return 0;
+    }
+
+    return gained / seconds;
+}
+
+function tickProgress(now) {
+    // Menggerakkan bar menuju target: mengejar saat tertinggal, menyusul pelan saat sepi.
+    progressFrame = null;
+
+    const seconds = progressFrameAt ? Math.min((now - progressFrameAt) / 1000, 0.25) : 0.05;
+    progressFrameAt = now;
+
+    let goal = targetPercent;
+
+    const waitingInQueue = messageLabel.textContent.startsWith("Menunggu antrean");
+
+    if (!waitingInQueue && targetPercent < PROGRESS_DRIFT_CEILING && now - progressStalledAt >= PROGRESS_STALL_MS) {
+        const rate = serverRate();
+        const drift = currentPercent + rate * seconds;
+        goal = Math.min(Math.max(targetPercent, drift), targetPercent + PROGRESS_DRIFT_GAP);
+    }
+
+    if (goal > currentPercent) {
+        const step = Math.min(goal - currentPercent, seconds * PROGRESS_RISE_PER_SECOND);
+        currentPercent = Math.min(goal, currentPercent + step);
+    } else if (currentPercent > targetPercent) {
+        currentPercent = Math.max(targetPercent, currentPercent - seconds * PROGRESS_RISE_PER_SECOND);
+    }
+
+    paintProgress();
+    paintCountdown(now);
+
+    progressFrame = requestAnimationFrame(tickProgress);
+}
+
+function paintCountdown(now) {
+    // Menurunkan angka "tersisa" tiap detik dari nilai ETA terakhir server.
+    if (etaAnchor === null) {
+        return;
+    }
+
+    const remaining = etaAnchor.seconds - (now - etaAnchor.at) / 1000;
+    etaLabel.textContent = `± ${formatInterval(Math.max(remaining, 0))} tersisa`;
 }
 
 function setStatus(percent, message, etaSeconds, elapsedSeconds) {
     // Memperbarui pesan proses, estimasi sisa waktu, dan durasi berjalan.
+    const numeric = Number(percent);
+    const changed = Number.isFinite(numeric) && Math.round(numeric) !== Math.round(targetPercent)
+        || (message && message !== messageLabel.textContent);
+    const now = performance.now();
+
     renderProgress(percent);
+
+    if (changed) {
+        progressStalledAt = now;
+        serverHistory.push({ at: now, percent: Math.max(0, Math.min(100, Number(percent) || 0)) });
+
+        if (serverHistory.length > PROGRESS_HISTORY) {
+            serverHistory.shift();
+        }
+    }
 
     if (message) {
         messageLabel.textContent = message;
+
+        if (message.startsWith("Menunggu antrean")) {
+            stopFakeProgress();
+            etaAnchor = null;
+            etaLabel.hidden = true;
+        }
     }
 
     const eta = Number.isFinite(Number(etaSeconds)) ? Number(etaSeconds) : null;
     const elapsed = Number.isFinite(Number(elapsedSeconds)) ? Number(elapsedSeconds) : null;
 
     if (percent >= 100 && elapsed !== null) {
+        stopProgressAnimation();
+        currentPercent = 100;
+        paintProgress();
+        etaAnchor = null;
         etaLabel.textContent = `Selesai dalam ${formatInterval(elapsed)}`;
         etaLabel.hidden = false;
         etaRunningLabel.hidden = true;
@@ -95,9 +228,11 @@ function setStatus(percent, message, etaSeconds, elapsedSeconds) {
     }
 
     if (eta !== null && eta >= 0) {
-        etaLabel.textContent = `± ${formatInterval(eta)} tersisa`;
+        etaAnchor = { seconds: eta, at: now };
+        paintCountdown(now);
         etaLabel.hidden = false;
     } else {
+        etaAnchor = null;
         etaLabel.hidden = true;
     }
 
@@ -133,8 +268,9 @@ function startFakeProgress() {
     // Memberi umpan balik awal saat server belum mengirim progress sebenarnya.
     stopFakeProgress();
     fakeTimer = setInterval(() => {
-        if (currentPercent < FAKE_PERCENT_CEILING) {
-            renderProgress(currentPercent + 1);
+        if (Math.round(currentPercent) < FAKE_PERCENT_CEILING) {
+            renderProgress(Math.round(currentPercent) + 1);
+            progressStalledAt = performance.now();
         }
     }, FAKE_PROGRESS_INTERVAL_MS);
 }
@@ -150,6 +286,8 @@ function stopFakeProgress() {
 function showError(message) {
     // Menampilkan error konversi dan membuka tombol tutup modal.
     stopFakeProgress();
+    stopProgressAnimation();
+    etaAnchor = null;
     etaLabel.hidden = true;
     etaLabel.textContent = "";
     etaRunningLabel.hidden = true;

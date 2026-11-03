@@ -8,6 +8,7 @@ from uuid import uuid4
 from flask import Blueprint, current_app, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
+from app.services.concurrency import QueueTimeout, conversion_slot
 from app.services.converter import (
     convert_csv_to_excel,
     convert_pdf_to_excel,
@@ -212,24 +213,31 @@ def convert():
     create_job(job_id, "Menerima file")
     progress = _build_progress(job_id)
 
-    start_time = time.perf_counter()
     rows = 0
     output_size = 0
 
+    def on_wait(waited, position):
+        update_job(job_id, 0, f"Menunggu antrean (posisi {position})")
+
     try:
-        _log_conversion_start(job_id, preview_id, conversion_type, original_name, page_count)
+        with conversion_slot(on_wait=on_wait):
+            start_time = time.perf_counter()
+            _log_conversion_start(job_id, preview_id, conversion_type, original_name, page_count)
 
-        if conversion_type == "csv-to-excel":
-            convert_csv_to_excel(input_path, output_path, progress)
-        else:
-            convert_pdf_to_excel(input_path, output_path, progress, total_pages=page_count)
+            if conversion_type == "csv-to-excel":
+                convert_csv_to_excel(input_path, output_path, progress)
+            else:
+                convert_pdf_to_excel(input_path, output_path, progress, total_pages=page_count)
 
-        if output_path.exists():
-            output_size = output_path.stat().st_size
+            if output_path.exists():
+                output_size = output_path.stat().st_size
 
-        duration_ms = int((time.perf_counter() - start_time) * 1000)
-        _log_conversion_finished(job_id, preview_id, duration_ms, rows, output_size)
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
+            _log_conversion_finished(job_id, preview_id, duration_ms, rows, output_size)
 
+    except QueueTimeout as error:
+        _log_conversion_error(job_id, preview_id, error, "QueueTimeout")
+        return _reject(str(error), job_id, preview_id=preview_id, level="WARNING", status=429)
     except ValueError as error:
         _cleanup(input_path, output_path)
         delete_preview(preview_id)
@@ -298,7 +306,7 @@ def _build_progress(job_id):
     return ProgressReporter(handle_update, on_phase=handle_phase)
 
 
-def _reject(message, job_id=None, preview_id=None, level="WARNING", log=True):
+def _reject(message, job_id=None, preview_id=None, level="WARNING", log=True, status=400):
     """Kirim error JSON dan tandai job gagal bila request terkait proses konversi."""
     if log:
         _log_rejection(message, job_id=job_id, preview_id=preview_id, level=level)
@@ -309,7 +317,7 @@ def _reject(message, job_id=None, preview_id=None, level="WARNING", log=True):
     if job_id:
         finish_job(job_id, error=message)
 
-    return jsonify({"error": message}), 400
+    return jsonify({"error": message}), status
 
 
 @main_bp.app_errorhandler(404)
