@@ -22,6 +22,7 @@ import sys
 
 try:
     from appwrite.client import Client
+    from appwrite.enums.tables_db_index_type import TablesDBIndexType
     from appwrite.exception import AppwriteException
     from appwrite.permission import Permission
     from appwrite.role import Role
@@ -65,7 +66,8 @@ INDEXES = [
         "key": "user_created",
         "type": "key",
         "attributes": ["user_id", "created_at"],
-        "orders": ["asc", "desc"],
+        # Appwrite menuntut huruf besar: 'ASC' / 'DESC'.
+        "orders": ["ASC", "DESC"],
     },
 ]
 
@@ -128,6 +130,30 @@ def _ensure(action: str, callback):
         raise
 
 
+def _ensure_indexes(tables: TablesDB, database_id: str, table_id: str) -> None:
+    """Pastikan semua index ada.
+
+    Dipisah dari ``create_table`` agar tabel yang sudah ada tanpa index
+    (mis. dibuat manual, atau ``create_table`` sempat gagal) tetap diperbaiki.
+    """
+    for index in INDEXES:
+        key = index["key"]
+        if _exists(lambda key=key: tables.get_index(database_id, table_id, key)):
+            print(f"  = index '{key}': sudah ada, dilewati")
+            continue
+        _ensure(
+            f"index '{key}'",
+            lambda index=index: tables.create_index(
+                database_id,
+                table_id,
+                index["key"],
+                TablesDBIndexType.KEY,
+                index["attributes"],
+                orders=index["orders"],
+            ),
+        )
+
+
 def build_client(endpoint: str, project_id: str, api_key: str):
     client = Client()
     client.set_endpoint(endpoint)
@@ -167,6 +193,9 @@ def setup(database_id: str, table_id: str, sources_id: str, results_id: str,
                 indexes=INDEXES,
             ),
         )
+
+    # Tabel bisa saja sudah ada tanpa index (mis. dibuat manual). Pastikan.
+    _ensure_indexes(tables, database_id, table_id)
 
     print("3) Bucket storage")
     for bucket_id, name in ((sources_id, "Sources"), (results_id, "Results")):
