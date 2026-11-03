@@ -11,7 +11,7 @@ os.environ.setdefault("KONVERTER_MAX_UPLOAD_MB", "50")
 
 import streamlit as st
 
-from app.services import supabase_store as sb
+from app.services import store as sb
 from app.services.concurrency import QueueTimeout, conversion_slot
 from app.services.converter import (
     convert_csv_to_excel,
@@ -429,8 +429,9 @@ def _page_home(user, limit_mb: int) -> None:
 
     if not sb.is_configured():
         st.caption(
-            "Riwayat & login (Supabase) belum dikonfigurasi. Isi `.streamlit/secrets.toml` "
-            "lalu jalankan `supabase/schema.sql` untuk mengaktifkannya."
+            "Riwayat & login belum dikonfigurasi. Isi blok `[supabase]` (jalankan "
+            "`supabase/schema.sql`) atau `[appwrite]` (jalankan `scripts/appwrite_setup.py`) "
+            "di `.streamlit/secrets.toml` untuk mengaktifkannya."
         )
 
 
@@ -619,6 +620,21 @@ def _page_auth() -> None:
         )
 
         with st.container(key="kv-converter"):
+            provider_name = sb.provider_label() or "belum dikonfigurasi"
+            st.caption(f"Backend akun: {provider_name}")
+
+            with st.expander("Bermasalah saat masuk?"):
+                st.caption("Coba tes koneksi ke server akun, lalu ulangi. Konversi tetap bisa tanpa login.")
+                if st.button("Tes koneksi", key="kv-health"):
+                    result = sb.health()
+                    if result.get("ok"):
+                        st.success(f"Terhubung ke {result.get('host') or result.get('provider')}.")
+                    else:
+                        st.error(
+                            "Tidak dapat menghubungi server akun. "
+                            f"Detail: {result.get('detail') or '-'}"
+                        )
+
             tab_in, tab_up = st.tabs(["Masuk", "Daftar"])
 
             with tab_in:
@@ -638,11 +654,11 @@ def _page_auth() -> None:
 
             with tab_up:
                 email = st.text_input("Email baru", key="kv-up-email")
-                password = st.text_input("Kata sandi baru (min. 6 karakter)", type="password", key="kv-up-password")
+                password = st.text_input("Kata sandi baru (min. 8 karakter)", type="password", key="kv-up-password")
 
                 if st.button("Daftar", type="primary", key="kv-up-submit"):
-                    if not email or len(password) < 6:
-                        st.warning("Isi email dan kata sandi minimal 6 karakter.")
+                    if not email or len(password) < 8:
+                        st.warning("Isi email dan kata sandi minimal 8 karakter.")
                     else:
                         try:
                             result = sb.sign_up(email.strip(), password)
@@ -659,12 +675,31 @@ def _page_auth() -> None:
 
 def _auth_error(exc: Exception) -> str:
     message = getattr(exc, "message", None) or str(exc)
-    if "Invalid login credentials" in message:
+    error_type = str(getattr(exc, "type", "") or "")
+    low = message.lower()
+
+    if (
+        "name or service not known" in low
+        or "getaddrinfo" in low
+        or "errno -2" in low
+        or "name resolution" in low
+        or "nodename nor servname" in low
+        or "temporary failure in name resolution" in low
+    ):
+        return (
+            "Server akun tidak dapat dihubungi (DNS gagal). Periksa koneksi atau konfigurasi "
+            "backend di Secrets, lalu coba lagi. Kamu tetap bisa konversi sebagai tamu."
+        )
+    if "invalid login credentials" in low or "user_invalid_credentials" in error_type:
         return "Email atau kata sandi salah."
-    if "User already registered" in message:
+    if "already registered" in low or "already exists" in low or "user_already_exists" in error_type:
         return "Email ini sudah terdaftar. Coba masuk."
-    if "Email not confirmed" in message:
+    if "email not confirmed" in low or "user_email_not_verified" in error_type:
         return "Email belum dikonfirmasi. Cek kotak masuk untuk tautan verifikasi."
+    if "user_session_limit" in error_type or "session limit" in low or "maximum number of sessions" in low:
+        return "Terlalu banyak sesi aktif. Keluar dari perangkat lain lalu coba lagi."
+    if "password" in low and ("short" in low or "weak" in low or "must be" in low or "length" in low):
+        return "Kata sandi terlalu lemah. Gunakan minimal 8 karakter."
     return f"Gagal: {message}"
 
 
@@ -723,17 +758,50 @@ def _render_job(job: dict, user) -> None:
 
     actions = st.columns([1, 1, 2])
     with actions[0]:
-        url = sb.signed_url(sb.RESULT_BUCKET, job["result_path"]) if job.get("result_path") else None
-        if url:
-            st.link_button("Unduh", url)
-        else:
-            st.caption("Hasil tidak tersedia")
+        _render_download(job)
     with actions[1]:
         with st.popover("Hapus"):
             st.write("Hapus konversi ini beserta filenya?")
             if st.button("Ya, hapus", key=f"kv-del-confirm-{job['id']}"):
+                st.session_state.pop(f"kv-dl-data-{job['id']}", None)
                 sb.delete_job(user["id"], job)
                 st.rerun()
+
+
+def _render_download(job: dict) -> None:
+    """Unduh hasil: signed URL (Supabase) atau ambil byte via server (Appwrite)."""
+    if not job.get("result_path"):
+        st.caption("Hasil tidak tersedia")
+        return
+
+    url = sb.signed_url(sb.RESULT_BUCKET, job["result_path"])
+
+    if url:
+        st.link_button("Unduh", url)
+        return
+
+    cache_key = f"kv-dl-data-{job['id']}"
+    data = st.session_state.get(cache_key)
+
+    if not data:
+        if st.button("Siapkan unduhan", key=f"kv-dl-prep-{job['id']}"):
+            with st.spinner("Menyiapkan file..."):
+                data = sb.download_bytes(sb.RESULT_BUCKET, job["result_path"])
+
+            if data:
+                st.session_state[cache_key] = data
+                st.rerun()
+            else:
+                st.caption("Hasil tidak dapat diambil")
+        return
+
+    st.download_button(
+        "Unduh",
+        data=data,
+        file_name=job.get("result_name") or "hasil.xlsx",
+        mime=EXCEL_MIME,
+        key=f"kv-dl-btn-{job['id']}",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -753,7 +821,10 @@ elif page == "history":
     _page_history(user)
 elif page == "auth":
     if not sb.is_configured():
-        st.info("Login belum dikonfigurasi. Isi `.streamlit/secrets.toml` dengan URL & anon key Supabase.")
+        st.info(
+            "Login belum dikonfigurasi. Isi blok `[supabase]` atau `[appwrite]` di "
+            "`.streamlit/secrets.toml` untuk mengaktifkannya."
+        )
     else:
         _page_auth()
 else:

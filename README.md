@@ -116,14 +116,14 @@ Buka <http://localhost:8501>. Jalankan dari **root repo** agar `.streamlit/confi
 | Hasil `.xlsx` | Hanya diunduh (byte di memori sesi) | Disimpan di bucket privat `results` + bisa diunduh ulang |
 | Riwayat | Tidak ada | Ada (unduh ulang / hapus) |
 
-Batas ukuran dicek di aplikasi **sebelum** konversi; batas keras server tetap `maxUploadSize = 50` di `.streamlit/config.toml`. Tanpa konfigurasi Supabase, aplikasi otomatis berjalan **mode tamu saja** (menu Masuk/Riwayat disembunyikan).
+Batas ukuran dicek di aplikasi **sebelum** konversi; batas keras server tetap `maxUploadSize = 50` di `.streamlit/config.toml`. Tanpa konfigurasi backend akun (Supabase/Appwrite), aplikasi otomatis berjalan **mode tamu saja** (menu Masuk/Riwayat disembunyikan).
 
 ### Deploy ke Streamlit Community Cloud (gratis)
 
 1. Push repo ke GitHub (publik).
 2. Buka <https://share.streamlit.io> → **New app**.
 3. Pilih repo `hisyamali/konverter`, branch `main`, main file **`streamlit_app.py`**.
-4. (Opsional, untuk login + riwayat) **Advanced settings → Secrets**, tempel blok `[supabase]` (lihat bagian berikut).
+4. (Opsional, untuk login + riwayat) **Advanced settings → Secrets**, tempel blok `[supabase]` atau `[appwrite]` (lihat bagian berikut).
 5. Pilih subdomain (mis. `all-convert.streamlit.app`) → **Deploy**.
 
 Catatan batas Community Cloud:
@@ -132,9 +132,20 @@ Catatan batas Community Cloud:
 - App **tidur setelah 12 jam** tanpa trafik dan **tidak mendukung custom domain**.
 - Overlay progress bergantung pada CSS Streamlit (`data-testid`); versi Streamlit dipin `1.66.1` agar tampilan stabil.
 
-### Akun, riwayat & penyimpanan (Supabase)
+### Akun, riwayat & penyimpanan (Supabase **atau** Appwrite)
 
-Login, riwayat, dan penyimpanan hasil memakai **Supabase** (Auth + Postgres + Storage). Isi file ini opsional — tanpa itu aplikasi tetap jalan dalam mode tamu.
+Login, riwayat, dan penyimpanan hasil bisa memakai **salah satu** backend: **Supabase** (Auth + Postgres + Storage) atau **Appwrite** (Auth + TablesDB + Storage). Isi salah satu saja; tanpa konfigurasi, aplikasi tetap jalan dalam **mode tamu**.
+
+Pilih backend aktif di `.streamlit/secrets.toml`:
+
+```toml
+[app]
+backend = "auto"   # "auto" (default) | "supabase" | "appwrite"
+```
+
+`auto` memilih Supabase bila kredensialnya ada, lalu Appwrite. Bila `backend` diisi eksplisit tetapi backend itu belum dikonfigurasi, aplikasi berjalan sebagai **mode tamu** (tidak ada perpindahan otomatis antar penyedia, agar akun tidak "hilang" tanpa sepengetahuan pengguna). Bisa juga lewat env var `KONVERTER_BACKEND`. Akun Supabase dan Appwrite **terpisah** — pengguna Supabase perlu mendaftar ulang bila pindah ke Appwrite.
+
+#### Opsi A — Supabase
 
 **1. Buat proyek Supabase** (gratis, tanpa kartu kredit) di <https://supabase.com>, lalu:
 
@@ -158,6 +169,45 @@ Streamlit Community Cloud — **App settings → Secrets**, tempel blok yang sam
 **3. (Opsional) Konfirmasi email**: di **Authentication → Providers → Email**, matikan "Confirm email" bila ingin pengguna langsung aktif saat mendaftar, atau biarkan aktif agar Streamlit menampilkan pesan "cek email".
 
 **Skema data**: tabel `jobs` menyimpan `user_id`, `conversion_type`, `original_name`, `source_path`, `result_path`, ukuran file, `status` (`processing`/`completed`/`failed`), `error`, `page_count`, `row_count`, dan `duration_ms`. Path objek storage mengikuti pola `<user_id>/<job_id>/<nama-file>` sehingga kebijakan RLS hanya mengizinkan pemilik folder masing-masing.
+
+#### Opsi B — Appwrite
+
+**1. Buat proyek Appwrite** (gratis, tanpa kartu kredit) di <https://cloud.appwrite.io>, salin **API endpoint** dan **Project ID** dari *Project Settings*.
+
+**2. Siapkan database/table/bucket otomatis** dengan skrip (butuh API key sementara ber-scope `databases` + `storage`):
+
+```bash
+# PowerShell
+$env:APPWRITE_API_KEY = "standard_xxxx"
+python scripts/appwrite_setup.py --endpoint https://sgp.cloud.appwrite.io/v1 --project-id <PROJECT_ID>
+```
+
+```bash
+# Linux/macOS
+export APPWRITE_API_KEY="standard_xxxx"
+python scripts/appwrite_setup.py --endpoint https://sgp.cloud.appwrite.io/v1 --project-id <PROJECT_ID>
+```
+
+Skrip ini **idempotent** (aman diulang): membuat database `konverter`, table `jobs` (14 kolom + index `user_created`), dan bucket privat `sources`/`results`, lalu mencetak blok TOML siap tempel. **Hapus API key setelah setup** — jangan simpan di Secrets.
+
+**3. Isi kredensial** (atau tempel hasil cetak skrip):
+
+```toml
+[appwrite]
+endpoint = "https://sgp.cloud.appwrite.io/v1"
+project_id = "<project-id>"
+database_id = "konverter"
+jobs_table_id = "jobs"
+sources_bucket_id = "sources"
+results_bucket_id = "results"
+
+[app]
+backend = "appwrite"
+```
+
+Alternatif Streamlit Cloud: isi **App settings → Secrets** dengan blok di atas. Alternatif env var: `APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`.
+
+**Catatan Appwrite**: file sumber/hasil disimpan tanpa signed URL — tombol unduh di riwayat mengambil byte lewat server lalu memakai tombol unduh Streamlit ("Siapkan unduhan"). Izin baca/ubah/hapus diatur **per baris/file** (`Role.user`), dan table/bucket hanya mengizinkan `Create` untuk pengguna login, sehingga data antar pengguna tetap terisolasi.
 
 > Fitur akun, riwayat, dan batas ukuran bertingkat hanya ada di **varian Streamlit**. UI Flask tetap tanpa login (batas tunggal `KONVERTER_MAX_UPLOAD_MB`).
 
@@ -227,6 +277,9 @@ Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, j
 | `KONVERTER_USER_MAX_UPLOAD_MB` | `50` | Batas unggahan untuk pengguna yang **login** di varian Streamlit |
 | `SUPABASE_URL` | *(kosong)* | Project URL Supabase (alternatif blok `[supabase]` di `secrets.toml`). Kosong = mode tamu saja |
 | `SUPABASE_ANON_KEY` | *(kosong)* | anon public key Supabase. Jangan pakai `service_role` |
+| `KONVERTER_BACKEND` | `auto` | Backend akun: `auto`, `supabase`, atau `appwrite` (alternatif `[app] backend`) |
+| `APPWRITE_ENDPOINT` | `https://cloud.appwrite.io/v1` | API endpoint Appwrite |
+| `APPWRITE_PROJECT_ID` | *(kosong)* | Project ID Appwrite (alternatif blok `[appwrite]` di `secrets.toml`) |
 | `KONVERTER_PDF_WORDS` | `1` | Pakai PyMuPDF untuk ekstraksi **teks** PDF (jauh lebih cepat, ±20×). Set `0` untuk kembali sepenuhnya ke `pdfplumber` |
 | `KONVERTER_MIN_PARALLEL_PAGES` | `60` | Ambang halaman minimal PDF bergaris sebelum memakai worker paralel; di bawahnya sekuensial lebih cepat karena biaya spawn proses |
 | `KONVERTER_TEXT_MIN_PARALLEL_PAGES` | `1000` | Ambang halaman minimal jalur teks sebelum memakai worker paralel (PyMuPDF sangat cepat sehingga dokumen lebih kecil sebaiknya sekuensial). Otomatis mengikuti ambang bergaris bila PyMuPDF tidak tersedia |
@@ -271,9 +324,11 @@ konverter/
 ├── .dockerignore
 ├── .streamlit/
 │   ├── config.toml         # Konfigurasi Streamlit (maxUploadSize 50 MB, tema)
-│   └── secrets.toml.example # Template secrets (Supabase URL/anon key) — salin ke secrets.toml
+│   └── secrets.toml.example # Template secrets (Supabase/Appwrite + [app] backend) — salin ke secrets.toml
 ├── supabase/
 │   └── schema.sql          # Skema Postgres: tabel jobs + RLS + bucket sources/results
+├── scripts/
+│   └── appwrite_setup.py   # Setup otomatis database/table/bucket Appwrite (idempotent)
 ├── requirements.txt
 ├── .devcontainer/
 │   ├── devcontainer.json       # Konfigurasi GitHub Codespaces (port publik)
@@ -307,7 +362,9 @@ konverter/
 │       ├── converter.py    # Logika konversi CSV/PDF → Excel, ekstraksi tabel
 │       ├── eta.py          # Perhitungan progress/ETA (dipakai Flask & Streamlit)
 │       ├── concurrency.py  # Pembatas/antrean konversi bersamaan
+│       ├── store.py        # Pemilih backend akun (Supabase/Appwrite) + fallback mode tamu
 │       ├── supabase_store.py # Integrasi Supabase (auth, tabel jobs, storage) — Streamlit
+│       ├── appwrite_store.py # Integrasi Appwrite (auth, TablesDB, storage) — Streamlit
 │       ├── previews.py     # Registrasi/pratinjau temp, pembersihan TTL
 │       └── progress.py     # Status pekerjaan konversi (in-memory)
 └── storage/
