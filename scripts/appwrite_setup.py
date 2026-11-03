@@ -39,7 +39,10 @@ DEFAULT_TABLE = "jobs"
 DEFAULT_TABLE_NAME = "Jobs"
 DEFAULT_SOURCES = "sources"
 DEFAULT_RESULTS = "results"
-MAX_FILE_MB = 50
+# Appwrite mengukur maximumFileSize dalam BYTES dan plan Free membatasinya
+# maksimum 50.000.000 (50 MB desimal). Nilai 50*1024*1024 = 52.428.800 justru
+# ditolak: "Value must be a valid range between 1 and 50,000,000".
+MAX_FILE_BYTES = 50_000_000
 ALLOWED_EXTENSIONS = ["pdf", "csv", "xlsx"]
 
 # Kolom table `jobs` (mengikuti skema Supabase agar UI sama untuk kedua backend).
@@ -210,7 +213,7 @@ def setup(database_id: str, table_id: str, sources_id: str, results_id: str,
                     permissions=BUCKET_PERMISSIONS,
                     file_security=True,
                     enabled=True,
-                    maximum_file_size=MAX_FILE_MB * 1024 * 1024,
+                    maximum_file_size=MAX_FILE_BYTES,
                     allowed_file_extensions=ALLOWED_EXTENSIONS,
                 ),
             )
