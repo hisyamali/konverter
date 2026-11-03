@@ -53,6 +53,26 @@ $env:KONVERTER_MAX_WORKERS=2; python run.py   # PowerShell
 KONVERTER_MAX_WORKERS=2 python run.py          # Linux/macOS
 ```
 
+## Tailwind CSS (UI)
+
+Antarmuka (Flask & Streamlit) memakai **Tailwind CSS v4**. File hasil build (`app/static/css/tailwind.css` dan `app/static/css/tailwind-streamlit.css`) **di-commit** karena Streamlit Community Cloud tidak menjalankan Node saat deploy.
+
+```bash
+npm install          # sekali saja
+npm run build:css    # build kedua output sekaligus
+npm run watch:css:flask      # rebuild otomatis saat mengembangkan UI Flask
+npm run watch:css:streamlit  # rebuild otomatis saat mengembangkan UI Streamlit
+```
+
+Sumber Tailwind:
+
+- `app/static/css/tailwind.shared.css` — token desain (`@theme`) dan utility brand, dipakai bersama.
+- `app/static/css/tailwind.src.css` — input UI Flask (preflight penuh). `@source` mengarah ke `app/templates` dan `app/static/js`.
+- `app/static/css/tailwind.streamlit.src.css` — input UI Streamlit (tanpa preflight, utility `!important`). `@source` mengarah ke `streamlit_app.py`.
+- `app/static/css/streamlit.css` — jembatan untuk menata DOM milik Streamlit (widget, container `kv-hero`/`kv-converter`, tombol).
+
+Karena utility dipindai dari sumber, class yang dirangkai dinamis di Python/JS harus muncul utuh di file sumber (tidak boleh digabung dari potongan string). CI `.github/workflows/css-build.yml` menolak PR bila CSS hasil build tidak sinkron dengan sumber.
+
 ## Menjalankan dengan Docker
 
 ```bash
@@ -77,7 +97,7 @@ Aplikasi ini adalah **server Flask**, sehingga tidak bisa di-hosting di GitHub P
 
 ## Aplikasi Streamlit (opsional)
 
-Selain antarmuka Flask, repositori menyertakan varian **Streamlit** (`streamlit_app.py`) yang memakai ulang logika konversi yang sama (`app/services/converter.py`). Alur UX-nya mengikuti gaya **iLovePDF**: beranda berisi pilihan alat → halaman alat (unggah → pratinjau → konversi → unduh) → riwayat. Tampilan memakai `app/static/css/streamlit.css` (hero, stepper 3 langkah, kartu alat, kartu pratinjau, overlay progress + ETA, feature grid).
+Selain antarmuka Flask, repositori menyertakan varian **Streamlit** (`streamlit_app.py`) yang memakai ulang logika konversi yang sama (`app/services/converter.py`). Alur UX-nya mengikuti gaya **iLovePDF**: beranda berisi pilihan alat → halaman alat (unggah → pratinjau → konversi → unduh) → riwayat. Tampilan memakai utility **Tailwind** (`app/static/css/tailwind-streamlit.css`) untuk markup custom, ditambah `app/static/css/streamlit.css` sebagai jembatan untuk widget bawaan Streamlit.
 
 ```bash
 pip install -r requirements.txt
@@ -277,8 +297,12 @@ konverter/
 │   ├── static/
 │   │   ├── js/app.js       # Logika klien (upload, polling progress, download)
 │   │   ├── js/logs.js      # Log viewer (auto-refresh)
-│   │   ├── css/style.css   # Tema UI Flask
-│   │   └── css/streamlit.css  # Reskin UI Streamlit (mirip Flask)
+│   │   ├── css/tailwind.src.css        # Sumber Tailwind UI Flask
+│   │   ├── css/tailwind.streamlit.src.css  # Sumber Tailwind UI Streamlit
+│   │   ├── css/tailwind.shared.css      # Token desain bersama
+│   │   ├── css/tailwind.css             # Hasil build (di-commit)
+│   │   ├── css/tailwind-streamlit.css   # Hasil build (di-commit)
+│   │   └── css/streamlit.css            # Jembatan CSS untuk widget Streamlit
 │   └── services/
 │       ├── converter.py    # Logika konversi CSV/PDF → Excel, ekstraksi tabel
 │       ├── eta.py          # Perhitungan progress/ETA (dipakai Flask & Streamlit)

@@ -1,0 +1,39 @@
+name: Tailwind CSS Check
+
+on:
+  pull_request:
+    branches: [main, staging]
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Verifikasi CSS hasil build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build CSS
+        run: npm run build:css
+
+      - name: Pastikan CSS hasil build sudah di-commit
+        run: |
+          if ! git diff --quiet -- app/static/css/tailwind.css app/static/css/tailwind-streamlit.css; then
+            echo "::error::CSS hasil build berbeda dari yang di-commit. Jalankan 'npm run build:css' lalu commit."
+            git diff --stat -- app/static/css/tailwind.css app/static/css/tailwind-streamlit.css
+            exit 1
+          fi

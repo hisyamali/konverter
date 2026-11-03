@@ -3,71 +3,77 @@
 {% block title %}Log: {{ filename }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid py-3">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="py-3">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-            <h4 class="mb-0"><code>{{ filename }}</code></h4>
-            <small class="text-muted">Total {{ total_lines }} baris</small>
+            <h4 class="mb-0 text-lg font-semibold"><code class="font-mono">{{ filename }}</code></h4>
+            <small class="text-kv-muted">Total {{ total_lines }} baris</small>
         </div>
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{{ url_for('logs.index') }}" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-arrow-left"></i> Kembali
+        <div class="flex flex-wrap gap-2">
+            <a href="{{ url_for('logs.index') }}" class="inline-flex items-center gap-1.5 rounded-lg border border-kv-line px-2.5 py-1.5 text-sm font-semibold text-kv-muted transition hover:bg-kv-navy hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+                </svg>
+                Kembali
             </a>
-            <a href="{{ url_for('logs.download', filename=filename) }}" class="btn btn-outline-primary btn-sm">
-                <i class="bi bi-download"></i> Download
+            <a href="{{ url_for('logs.download', filename=filename) }}" class="inline-flex items-center gap-1.5 rounded-lg border border-kv-blue px-2.5 py-1.5 text-sm font-semibold text-kv-blue transition hover:bg-kv-blue hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Download
             </a>
         </div>
     </div>
 
     <!-- Toolbar filter -->
-    <div class="card mb-3">
-        <div class="card-body py-2">
-            <form id="filter-form" class="row g-2 align-items-end">
-                <div class="col-auto">
-                    <label class="form-label small mb-0">Baris (tail)</label>
-                    <select name="lines" id="lines-select" class="form-select form-select-sm" onchange="this.form.submit()">
+    <div class="mb-3 rounded-xl border border-kv-border bg-white shadow-sm">
+        <div class="px-4 py-2">
+            <form id="filter-form" class="flex flex-wrap items-end gap-2">
+                <div>
+                    <label class="mb-1 block text-xs font-semibold text-kv-heading">Baris (tail)</label>
+                    <select name="lines" id="lines-select" class="rounded-lg border border-kv-line bg-white px-3 py-1.5 text-sm" onchange="this.form.submit()">
                         {% for opt in [50, 100, 200, 500, 1000, 2000, 5000] %}
                         <option value="{{ opt }}" {% if opt == lines %}selected{% endif %}>{{ opt }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-auto">
-                    <label class="form-label small mb-0">Level</label>
-                    <select name="level" id="level-select" class="form-select form-select-sm" onchange="this.form.submit()">
+                <div>
+                    <label class="mb-1 block text-xs font-semibold text-kv-heading">Level</label>
+                    <select name="level" id="level-select" class="rounded-lg border border-kv-line bg-white px-3 py-1.5 text-sm" onchange="this.form.submit()">
                         <option value="">Semua</option>
                         {% for lvl in levels %}
                         <option value="{{ lvl }}" {% if lvl == level %}selected{% endif %}>{{ lvl }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-auto">
-                    <label class="form-label small mb-0">Cari</label>
-                    <input type="text" name="search" id="search-input" class="form-control form-control-sm"
+                <div>
+                    <label class="mb-1 block text-xs font-semibold text-kv-heading">Cari</label>
+                    <input type="text" name="search" id="search-input" class="rounded-lg border border-kv-line bg-white px-3 py-1.5 text-sm"
                            value="{{ search }}" placeholder="Kata kunci..." onkeydown="if(event.key==='Enter')this.form.submit()">
                 </div>
-                <div class="col-auto">
-                    <div class="form-check">
-                        <input type="checkbox" name="auto" id="auto-refresh" class="form-check-input"
+                <div>
+                    <label class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-kv-heading">
+                        <input type="checkbox" name="auto" id="auto-refresh" class="size-4 accent-kv-blue"
                                {% if auto_refresh %}checked{% endif %} onchange="toggleAutoRefresh()">
-                        <label class="form-check-label small" for="auto-refresh">Auto-refresh (2s)</label>
-                    </div>
+                        Auto-refresh (2s)
+                    </label>
                 </div>
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-primary btn-sm">Terapkan</button>
-                    <a href="{{ url_for('logs.view', filename=filename) }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+                <div class="flex gap-2">
+                    <button type="submit" class="rounded-lg bg-kv-blue px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-kv-navy">Terapkan</button>
+                    <a href="{{ url_for('logs.view', filename=filename) }}" class="rounded-lg border border-kv-line px-3 py-1.5 text-sm font-semibold text-kv-muted transition hover:bg-kv-navy hover:text-white">Reset</a>
                 </div>
             </form>
         </div>
     </div>
 
     <!-- Log content -->
-    <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
+    <div class="rounded-xl border border-kv-border bg-white shadow-sm">
+        <div class="flex items-center justify-between border-b border-[#eef2f7] bg-[#f8fafc] px-4 py-3">
             <strong>Log Content</strong>
-            <span id="log-status" class="text-muted small"></span>
+            <span id="log-status" class="text-sm text-kv-muted"></span>
         </div>
-        <div class="card-body p-0">
-            <pre id="log-content" class="mb-0 p-3" style="max-height: 70vh; overflow: auto; font-size: 0.85rem; line-height: 1.5;">{{ log_lines|join('\n') }}</pre>
+        <div class="p-0">
+            <pre id="log-content" class="m-0 max-h-[70vh] overflow-auto p-3 text-[0.85rem] leading-[1.5]">{{ log_lines|join('\n') }}</pre>
         </div>
     </div>
 </div>

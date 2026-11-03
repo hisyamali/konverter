@@ -23,6 +23,7 @@ from app.services.eta import ProgressReporter, format_interval
 
 EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSS_PATH = Path(__file__).parent / "app" / "static" / "css" / "streamlit.css"
+TAILWIND_CSS_PATH = Path(__file__).parent / "app" / "static" / "css" / "tailwind-streamlit.css"
 
 # Batas ukuran unggahan: tamu (tanpa login) vs pengguna yang login.
 GUEST_MAX_MB = int(os.environ.get("KONVERTER_GUEST_MAX_UPLOAD_MB", "10") or "10")
@@ -33,6 +34,14 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="collapsed",
 )
+
+# Tailwind (utility) dimuat lebih dulu; streamlit.css menjadi jembatan yang
+# menyetel elemen milik Streamlit sendiri (widget, container ber-key, chrome).
+if TAILWIND_CSS_PATH.exists():
+    st.markdown(
+        f"<style>{TAILWIND_CSS_PATH.read_text(encoding='utf-8')}</style>",
+        unsafe_allow_html=True,
+    )
 
 if CSS_PATH.exists():
     st.markdown(f"<style>{CSS_PATH.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
@@ -77,8 +86,25 @@ def _table_html(headers, rows) -> str:
         "<tr>" + "".join(f"<td>{_esc(cell)}</td>" for cell in row) + "</tr>" for row in rows
     )
     return (
-        '<div class="kv-preview-scroll"><table class="kv-preview-table">'
+        '<div class="max-h-[300px] w-full overflow-auto rounded-2xl border border-kv-border bg-white">'
+        '<table class="w-full border-collapse text-[0.82rem] '
+        "[&_th]:whitespace-nowrap [&_th]:bg-kv-th [&_th]:px-2.5 [&_th]:py-[9px] [&_th]:text-left "
+        '[&_th]:font-extrabold [&_th]:text-kv-heading [&_td]:whitespace-nowrap [&_td]:border-t '
+        '[&_td]:border-[#eef2f7] [&_td]:px-2.5 [&_td]:py-2 [&_td]:text-kv-body">'
         f"<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
+    )
+
+
+def _copy_html(eyebrow: str, heading: str, description: str) -> str:
+    """Blok copy hero: eyebrow, judul, dan deskripsi (semua teks sudah di-escape)."""
+    return (
+        "<div>"
+        f'<p class="mb-[18px] w-fit rounded-full bg-kv-blue-soft px-3.5 py-2 text-[0.78rem] '
+        f'font-extrabold uppercase tracking-[0.08em] text-kv-blue-ink">{eyebrow}</p>'
+        f'<h1 class="m-0 max-w-[760px] p-0 text-[clamp(2.35rem,6vw,4.8rem)] font-bold leading-[0.96] '
+        f'tracking-[-0.06em] text-kv-ink">{heading}</h1>'
+        f'<p class="mt-6 mb-0 max-w-[540px] text-[1.08rem] leading-[1.7] text-kv-muted">{description}</p>'
+        "</div>"
     )
 
 
@@ -86,50 +112,65 @@ def _hero_html(subtitle: str = "") -> str:
     description = subtitle or (
         "Unggah file, lihat pratinjau, lalu konversi dan download hasilnya sebagai file .xlsx."
     )
-    return (
-        '<div class="kv-hero-copy">'
-        '<p class="kv-eyebrow">Web &amp; Mobile Converter</p>'
-        "<h1>Ubah PDF atau CSV menjadi Excel dalam beberapa detik.</h1>"
-        f'<p class="kv-description">{_esc(description)}</p>'
-        "</div>"
+    return _copy_html(
+        "Web &amp; Mobile Converter",
+        "Ubah PDF atau CSV menjadi Excel dalam beberapa detik.",
+        _esc(description),
     )
 
 
 def _steps_html(active: int) -> str:
     labels = ["Pilih &amp; unggah", "Konversi", "Unduh"]
-    items = "".join(
-        f'<li class="kv-step{" is-active" if index + 1 == active else ""}">'
-        f"<span>{index + 1}</span> {label}</li>"
-        for index, label in enumerate(labels)
-    )
-    return f'<ol class="kv-steps kv-steps-3" aria-label="Langkah">{items}</ol>'
+    items = []
+    for index, label in enumerate(labels):
+        is_active = index + 1 == active
+        item_cls = (
+            "bg-kv-blue-soft text-kv-blue-ink" if is_active else "bg-kv-panel text-kv-subtle"
+        )
+        badge_cls = "bg-kv-blue text-white" if is_active else "bg-kv-circle"
+        items.append(
+            f'<li class="flex items-center gap-2 rounded-2xl px-3 py-[10px] text-[0.82rem] '
+            f'font-extrabold {item_cls}">'
+            f'<span class="grid size-[22px] place-items-center rounded-full text-[0.78rem] {badge_cls}">'
+            f"{index + 1}</span> {label}</li>"
+        )
+    joined = "".join(items)
+    return f'<ol class="m-0 mb-1.5 grid list-none grid-cols-3 gap-2 p-0 max-[780px]:grid-cols-1" aria-label="Langkah">{joined}</ol>'
 
 
 def _feature_html() -> str:
+    article_cls = "rounded-3xl bg-kv-navy p-[22px] text-white"
     return (
-        '<section class="kv-feature-grid" aria-label="Fitur aplikasi">'
-        "<article><span>01</span><h2>PDF ke Excel</h2>"
-        "<p>Membaca tabel dari PDF dan menggabungkan hasilnya dalam satu sheet Excel.</p></article>"
-        "<article><span>02</span><h2>CSV ke Excel</h2>"
-        "<p>Mendeteksi pemisah koma atau titik koma secara otomatis.</p></article>"
-        "<article><span>03</span><h2>Pratinjau Sebelum Konversi</h2>"
-        "<p>Cek isi file (kolom, baris, jumlah halaman) sebelum proses konversi berjalan.</p></article>"
+        '<section class="mt-5 grid grid-cols-3 gap-[18px] max-[780px]:grid-cols-1" aria-label="Fitur aplikasi">'
+        f'<article class="{article_cls}"><span class="font-black text-kv-skyline">01</span>'
+        '<h2 class="mt-4 mb-2.5 text-[1.1rem] text-white">PDF ke Excel</h2>'
+        '<p class="m-0 leading-[1.6] text-kv-card-ink">Membaca tabel dari PDF dan menggabungkan hasilnya dalam satu sheet Excel.</p></article>'
+        f'<article class="{article_cls}"><span class="font-black text-kv-skyline">02</span>'
+        '<h2 class="mt-4 mb-2.5 text-[1.1rem] text-white">CSV ke Excel</h2>'
+        '<p class="m-0 leading-[1.6] text-kv-card-ink">Mendeteksi pemisah koma atau titik koma secara otomatis.</p></article>'
+        f'<article class="{article_cls}"><span class="font-black text-kv-skyline">03</span>'
+        '<h2 class="mt-4 mb-2.5 text-[1.1rem] text-white">Pratinjau Sebelum Konversi</h2>'
+        '<p class="m-0 leading-[1.6] text-kv-card-ink">Cek isi file (kolom, baris, jumlah halaman) sebelum proses konversi berjalan.</p></article>'
         "</section>"
     )
 
 
 def _limit_banner_html(user, limit_mb: int) -> str:
+    base_cls = (
+        "my-1.5 rounded-2xl border px-4 py-3 text-[0.9rem] leading-[1.55] text-kv-body"
+    )
     if user:
         return (
-            '<div class="kv-limit-banner is-user">'
+            f'<div class="{base_cls} border-[#bfe3c8] bg-[#f1fbf4]">'
             f'<strong>{_esc(user.get("email") or "Pengguna")}</strong> · '
             f"batas unggahan <strong>{limit_mb} MB</strong> · hasil otomatis tersimpan di riwayat."
             "</div>"
         )
 
     return (
-        '<div class="kv-limit-banner">'
-        '<span class="kv-limit-tag">Mode tamu</span> '
+        f'<div class="{base_cls} border-kv-blue-soft bg-[#f2f6ff]">'
+        '<span class="rounded-full bg-kv-navy px-2.5 py-[3px] text-[0.72rem] font-extrabold '
+        'tracking-[0.03em] text-white">Mode tamu</span> '
         f"Batas unggahan <strong>{limit_mb} MB</strong> · file langsung dihapus setelah dikonversi. "
         f"Masuk untuk batas <strong>{USER_MAX_MB} MB</strong> dan riwayat konversi."
         "</div>"
@@ -137,25 +178,38 @@ def _limit_banner_html(user, limit_mb: int) -> str:
 
 
 def _tool_cards_html() -> str:
+    card_cls = (
+        "rounded-[22px] border border-kv-border bg-white p-5 shadow-[0_12px_30px_rgba(55,76,118,0.08)]"
+    )
+    icon_cls = (
+        "inline-grid min-w-[52px] place-items-center rounded-xl bg-kv-blue-soft px-2.5 py-[7px] "
+        "text-[0.76rem] font-black tracking-[0.04em] text-kv-blue-ink"
+    )
     return (
-        '<div class="kv-tool-grid">'
-        '<article class="kv-tool-card"><span class="kv-tool-icon">PDF</span>'
-        "<h3>PDF ke Excel</h3><p>Gabungkan tabel dari seluruh halaman menjadi satu sheet Excel.</p></article>"
-        '<article class="kv-tool-card"><span class="kv-tool-icon">CSV</span>'
-        "<h3>CSV ke Excel</h3><p>Deteksi pemisah otomatis, langsung jadi .xlsx yang rapi.</p></article>"
+        '<div class="grid grid-cols-2 gap-4 max-[780px]:grid-cols-1">'
+        f'<article class="{card_cls}"><span class="{icon_cls}">PDF</span>'
+        '<h3 class="mt-3.5 mb-2 text-[1.05rem] text-kv-ink">PDF ke Excel</h3>'
+        '<p class="m-0 text-[0.9rem] leading-[1.6] text-kv-muted">Gabungkan tabel dari seluruh halaman menjadi satu sheet Excel.</p></article>'
+        f'<article class="{card_cls}"><span class="{icon_cls}">CSV</span>'
+        '<h3 class="mt-3.5 mb-2 text-[1.05rem] text-kv-ink">CSV ke Excel</h3>'
+        '<p class="m-0 text-[0.9rem] leading-[1.6] text-kv-muted">Deteksi pemisah otomatis, langsung jadi .xlsx yang rapi.</p></article>'
         "</div>"
     )
 
 
 def _preview_html(kind: str, data: dict, filename: str, size_bytes: int) -> str:
     parts = [
-        '<div class="kv-preview-meta">',
-        f'<span class="kv-badge-file">{_esc(filename)}</span>',
+        '<div class="mt-1.5 flex flex-wrap items-center gap-2">',
+        f'<span class="rounded-full bg-kv-navy px-3 py-1.5 text-[0.8rem] font-extrabold text-white '
+        f'[overflow-wrap:anywhere]">{_esc(filename)}</span>',
     ]
 
     if kind == "csv-to-excel":
         rows = data["sample_rows"]
-        parts.append(f'<span class="kv-facts">{_format_bytes(size_bytes)} · {data["row_count"]} baris</span>')
+        parts.append(
+            f'<span class="text-[0.84rem] font-bold text-kv-muted">'
+            f'{_format_bytes(size_bytes)} · {data["row_count"]} baris</span>'
+        )
         parts.append("</div>")
         table = _table_html(data["headers"], rows)
         caption = f"Menampilkan {len(rows)} dari {data['row_count']} baris."
@@ -174,14 +228,16 @@ def _preview_html(kind: str, data: dict, filename: str, size_bytes: int) -> str:
             rows = normalized
 
         parts.append(
-            f'<span class="kv-facts">{_format_bytes(size_bytes)} · {data["page_count"]} halaman</span>'
+            f'<span class="text-[0.84rem] font-bold text-kv-muted">'
+            f'{_format_bytes(size_bytes)} · {data["page_count"]} halaman</span>'
         )
         parts.append("</div>")
 
         estimate = int(data.get("estimated_seconds") or 0)
         if estimate > 0:
             parts.append(
-                f'<p class="kv-estimate">Perkiraan waktu konversi: ± {format_interval(estimate)}</p>'
+                f'<p class="mt-2.5 mb-0 text-[0.84rem] font-bold text-kv-blue">'
+                f"Perkiraan waktu konversi: ± {format_interval(estimate)}</p>"
             )
 
         table = _table_html(headers, rows)
@@ -191,7 +247,7 @@ def _preview_html(kind: str, data: dict, filename: str, size_bytes: int) -> str:
         )
 
     parts.append(table)
-    parts.append(f'<p class="kv-preview-caption">{_esc(caption)}</p>')
+    parts.append(f'<p class="m-0 text-[0.8rem] text-kv-subtle">{_esc(caption)}</p>')
     return "".join(parts)
 
 
@@ -201,23 +257,34 @@ def _overlay_html(percent, message, eta, elapsed) -> str:
     running_line = ""
 
     if pct >= 100:
-        eta_line = f'<p class="kv-loading-eta">Selesai dalam {format_interval(elapsed)}</p>'
+        eta_line = (
+            f'<p class="mt-2.5 mb-1 text-[0.82rem] font-semibold text-kv-faint">'
+            f"Selesai dalam {format_interval(elapsed)}</p>"
+        )
     elif eta is not None and eta >= 0:
-        eta_line = f'<p class="kv-loading-eta">± {format_interval(eta)} tersisa</p>'
+        eta_line = (
+            f'<p class="mt-2.5 mb-1 text-[0.82rem] font-semibold text-kv-faint">'
+            f"± {format_interval(eta)} tersisa</p>"
+        )
 
     if pct < 100 and elapsed and elapsed > 0:
-        running_line = f'<p class="kv-loading-eta-running">berjalan {format_interval(elapsed)}</p>'
+        running_line = (
+            '<p class="mt-0 mb-5 text-[0.82rem] font-semibold text-kv-faint">'
+            f"berjalan {format_interval(elapsed)}</p>"
+        )
 
     return (
-        '<div class="kv-overlay">'
-        '<div class="kv-loading-panel" role="dialog" aria-modal="true">'
-        '<h2 class="kv-loading-title">Memproses file</h2>'
-        f'<p class="kv-loading-message">{_esc(message or "Memproses file")}</p>'
+        '<div class="fixed inset-0 z-[99999] grid place-items-center bg-[rgba(11,18,34,0.55)] p-5">'
+        '<div class="w-[min(430px,100%)] rounded-[26px] bg-white p-[26px] text-left shadow-[0_26px_60px_rgba(8,15,32,0.35)]" '
+        'role="dialog" aria-modal="true">'
+        '<h2 class="m-0 p-0 text-[1.24rem] tracking-[-0.02em] text-kv-ink">Memproses file</h2>'
+        f'<p class="mt-2.5 mb-5 text-[0.94rem] text-kv-muted">{_esc(message or "Memproses file")}</p>'
         f"{eta_line}{running_line}"
-        '<div class="kv-progress-track">'
-        f'<div class="kv-progress-bar" style="width:{pct}%"></div>'
+        '<div class="h-3 overflow-hidden rounded-full bg-kv-track">'
+        '<div class="h-full rounded-[inherit] bg-gradient-to-r from-[#1b49d8] to-[#4b8bff] '
+        f'transition-[width] duration-300 ease-out" style="width:{pct}%"></div>'
         "</div>"
-        f'<p class="kv-loading-percent">{pct}%</p>'
+        f'<p class="mt-3 mb-0 text-[0.9rem] font-extrabold text-kv-navy">{pct}%</p>'
         "</div></div>"
     )
 
@@ -311,8 +378,12 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
 
     with columns[0]:
         st.markdown(
-            '<div class="kv-brand"><span class="kv-brand-mark">K</span>'
-            '<span class="kv-brand-text">Konverter<small>PDF &amp; CSV → Excel</small></span></div>',
+            '<div class="mb-1 flex items-center gap-3">'
+            '<span class="grid size-[42px] place-items-center rounded-2xl kv-cta text-[1.15rem] '
+            'font-black text-white shadow-[0_12px_26px_rgba(27,73,216,0.3)]">K</span>'
+            '<span class="flex flex-col text-[1.05rem] font-black leading-[1.1] text-kv-ink">Konverter'
+            '<small class="text-[0.72rem] font-bold tracking-[0.02em] text-kv-muted">PDF &amp; CSV → Excel</small>'
+            "</span></div>",
             unsafe_allow_html=True,
         )
 
@@ -332,7 +403,8 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
                     sb.sign_out()
                     _go("home")
             else:
-                st.markdown('<span class="kv-nav-note">Login belum aktif</span>', unsafe_allow_html=True)
+                st.markdown('<span class="inline-block rounded-xl bg-kv-th px-3 py-2 text-[0.78rem] '
+                            'font-extrabold text-kv-subtle">Login belum aktif</span>', unsafe_allow_html=True)
 
 
 def _page_home(user, limit_mb: int) -> None:
@@ -341,7 +413,8 @@ def _page_home(user, limit_mb: int) -> None:
         st.markdown(_hero_html(), unsafe_allow_html=True)
         st.markdown(_limit_banner_html(user, limit_mb), unsafe_allow_html=True)
 
-        st.markdown('<p class="kv-section-title">Pilih alat</p>', unsafe_allow_html=True)
+        st.markdown('<p class="mt-[22px] mb-3 p-0 text-[1.05rem] font-black tracking-[-0.01em] '
+                    'text-kv-ink">Pilih alat</p>', unsafe_allow_html=True)
         st.markdown(_tool_cards_html(), unsafe_allow_html=True)
 
         pick = st.columns(2)
@@ -378,7 +451,7 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
         st.markdown(_limit_banner_html(user, limit_mb), unsafe_allow_html=True)
 
         with st.container(key="kv-converter"):
-            st.markdown(f'<p class="kv-tool-heading">{_esc(title)}</p>', unsafe_allow_html=True)
+            st.markdown(f'<p class="mb-3 mt-0 p-0 text-[1.15rem] font-black text-kv-ink">{_esc(title)}</p>', unsafe_allow_html=True)
             st.markdown(_steps_html(active_step), unsafe_allow_html=True)
 
             uploaded = st.file_uploader("File sumber", type=["pdf", "csv"], key="kv-upload")
@@ -537,10 +610,11 @@ def _page_auth() -> None:
     with st.container(key="kv-hero"):
         _brand_row(None, back_label="← Kembali", show_login=False)
         st.markdown(
-            '<div class="kv-hero-copy"><p class="kv-eyebrow">Akun</p>'
-            "<h1>Masuk untuk menyimpan riwayat.</h1>"
-            '<p class="kv-description">Login membuka batas unggahan '
-            f"{USER_MAX_MB} MB dan menyimpan hasil konversi di riwayat akunmu.</p></div>",
+            _copy_html(
+                "Akun",
+                "Masuk untuk menyimpan riwayat.",
+                f"Login membuka batas unggahan {USER_MAX_MB} MB dan menyimpan hasil konversi di riwayat akunmu.",
+            ),
             unsafe_allow_html=True,
         )
 
@@ -598,9 +672,11 @@ def _page_history(user) -> None:
     with st.container(key="kv-hero"):
         _brand_row(user, back_label="← Kembali ke alat", show_history=False)
         st.markdown(
-            '<div class="kv-hero-copy"><p class="kv-eyebrow">Riwayat</p>'
-            "<h1>Konversi yang kamu simpan.</h1>"
-            '<p class="kv-description">Hasil dapat diunduh ulang kapan saja selama masih tersimpan.</p></div>',
+            _copy_html(
+                "Riwayat",
+                "Konversi yang kamu simpan.",
+                "Hasil dapat diunduh ulang kapan saja selama masih tersimpan.",
+            ),
             unsafe_allow_html=True,
         )
 
@@ -622,11 +698,20 @@ def _render_job(job: dict, user) -> None:
     if job.get("row_count"):
         facts.append(f"{job['row_count']} baris")
 
+    status_cls = {
+        "completed": "bg-kv-success-soft text-kv-success",
+        "processing": "bg-kv-warn-soft text-kv-warn",
+        "failed": "bg-[#ffe9ec] text-kv-danger",
+    }.get(status, "bg-kv-th text-kv-muted")
+
     st.markdown(
-        '<div class="kv-history-item">'
-        f'<span class="kv-job-status is-{status}">{_esc(_status_label(status))}</span>'
-        f'<span class="kv-job-name">{_esc(job.get("original_name") or "-")}</span>'
-        f'<span class="kv-facts">{" · ".join(_esc(item) for item in facts)}</span>'
+        '<div class="flex flex-wrap items-center gap-2.5 py-3">'
+        f'<span class="rounded-full px-2.5 py-[5px] text-[0.72rem] font-black tracking-[0.03em] '
+        f'{status_cls}">{_esc(_status_label(status))}</span>'
+        f'<span class="font-extrabold text-kv-ink [overflow-wrap:anywhere]">'
+        f'{_esc(job.get("original_name") or "-")}</span>'
+        f'<span class="text-[0.84rem] font-bold text-kv-muted">'
+        f'{" · ".join(_esc(item) for item in facts)}</span>'
         "</div>",
         unsafe_allow_html=True,
     )

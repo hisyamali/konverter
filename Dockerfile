@@ -1,3 +1,16 @@
+# Tahap 1: bangun Tailwind CSS dari template/JS/streamlit_app.py.
+FROM node:22-alpine AS assets
+
+WORKDIR /build
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build:css
+
+
+# Tahap 2: image aplikasi.
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -11,6 +24,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# Pakai CSS hasil build tahap aset agar selalu sinkron dengan source.
+COPY --from=assets /build/app/static/css/tailwind.css app/static/css/tailwind.css
+COPY --from=assets /build/app/static/css/tailwind-streamlit.css app/static/css/tailwind-streamlit.css
 
 RUN mkdir -p storage/uploads storage/outputs
 

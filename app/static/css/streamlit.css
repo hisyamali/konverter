@@ -1,17 +1,15 @@
+/*
+ * Jembatan CSS untuk Streamlit.
+ *
+ * Hanya berisi hal yang tidak bisa dicapai Tailwind: menata DOM milik Streamlit
+ * sendiri (widget, container ber-key, chrome aplikasi). Seluruh markup custom
+ * (hero, stepper, kartu, tabel pratinjau, overlay) sudah memakai utility
+ * Tailwind dari app/static/css/tailwind-streamlit.css.
+ */
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
 
-:root {
-    --kv-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --kv-ink: #152033;
-    --kv-muted: #5d6b82;
-    --kv-navy: #16213e;
-    --kv-blue: #1b49d8;
-    --kv-blue-soft: #e8efff;
-    --kv-blue-ink: #2a5bd7;
-    --kv-border: #e5ebf5;
-    --kv-line: #d8e0ec;
-}
-
+/* Sembunyikan chrome bawaan Streamlit. */
 #MainMenu,
 header[data-testid="stHeader"],
 footer {
@@ -22,8 +20,8 @@ footer {
     background:
         radial-gradient(circle at top left, rgba(64, 123, 255, 0.18), transparent 34rem),
         linear-gradient(135deg, #f7f9fc 0%, #e9eef8 100%);
-    font-family: var(--kv-font);
-    color: var(--kv-ink);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #152033;
 }
 
 .stApp [data-testid="stAppViewContainer"] {
@@ -35,6 +33,7 @@ footer {
     padding: 48px 16px !important;
 }
 
+/* --- Container ber-key: kartu hero & kartu konverter --- */
 .st-key-kv-hero {
     background: rgba(255, 255, 255, 0.82);
     border-radius: 34px;
@@ -46,88 +45,14 @@ footer {
 
 .st-key-kv-converter {
     background: #ffffff;
-    border: 1px solid var(--kv-border);
+    border: 1px solid #e5ebf5;
     border-radius: 26px;
     box-shadow: 0 18px 48px rgba(55, 76, 118, 0.12);
     padding: 26px;
     gap: 14px;
 }
 
-.kv-eyebrow {
-    width: fit-content;
-    margin: 0 0 18px;
-    padding: 8px 14px;
-    border-radius: 999px;
-    background: var(--kv-blue-soft);
-    color: var(--kv-blue-ink);
-    font-size: 0.78rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.kv-hero-copy h1 {
-    max-width: 760px;
-    margin: 0;
-    font-size: clamp(2.35rem, 6vw, 4.8rem);
-    line-height: 0.96;
-    letter-spacing: -0.06em;
-    color: var(--kv-ink);
-}
-
-.kv-description {
-    max-width: 540px;
-    margin: 24px 0 0;
-    color: var(--kv-muted);
-    font-size: 1.08rem;
-    line-height: 1.7;
-}
-
-.kv-steps {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin: 0 0 6px;
-    padding: 0;
-    list-style: none;
-}
-
-.kv-step {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: #f1f4fa;
-    color: #7d8aa1;
-    font-size: 0.82rem;
-    font-weight: 800;
-}
-
-.kv-step span {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: #dfe6f3;
-    font-size: 0.78rem;
-}
-
-.kv-step.is-active {
-    background: var(--kv-blue-soft);
-    color: var(--kv-blue-ink);
-}
-
-.kv-step.is-active span {
-    background: var(--kv-blue);
-    color: #ffffff;
-}
-
-.kv-steps-3 {
-    grid-template-columns: repeat(3, 1fr);
-}
-
+/* --- Widget: label, select, file uploader --- */
 [data-testid="stWidgetLabel"] p,
 .stSelectbox label,
 .stFileUploader label {
@@ -138,7 +63,7 @@ footer {
 
 div[data-baseweb="select"] > div {
     min-height: 52px;
-    border: 1px solid var(--kv-line) !important;
+    border: 1px solid #d8e0ec !important;
     border-radius: 16px !important;
     background: #f8fafc !important;
     color: #172033 !important;
@@ -147,19 +72,20 @@ div[data-baseweb="select"] > div {
 [data-testid="stFileUploaderDropzone"] {
     min-height: 52px;
     padding: 13px 14px;
-    border: 1px solid var(--kv-line);
+    border: 1px solid #d8e0ec;
     border-radius: 16px;
     background: #f8fafc;
 }
 
 [data-testid="stFileUploaderDropzone"] button {
     border-radius: 12px;
-    border: 1px solid var(--kv-line);
+    border: 1px solid #d8e0ec;
     background: #ffffff;
-    color: var(--kv-blue);
+    color: #1b49d8;
     font-weight: 800;
 }
 
+/* --- Tombol utama Streamlit --- */
 .stButton > button,
 [data-testid="stButton"] button,
 .stDownloadButton > button,
@@ -170,7 +96,6 @@ div[data-baseweb="select"] > div {
     border-radius: 18px !important;
     background: linear-gradient(135deg, #1b49d8, #16213e) !important;
     color: #ffffff !important;
-    font-family: var(--kv-font);
     font-weight: 900 !important;
     box-shadow: 0 16px 36px rgba(27, 73, 216, 0.28);
     transition: transform 140ms ease;
@@ -191,238 +116,11 @@ div[data-baseweb="select"] > div {
     box-shadow: none;
 }
 
-.kv-preview-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    margin-top: 6px;
-}
-
-.kv-badge-file {
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: var(--kv-navy);
-    color: #ffffff;
-    font-size: 0.8rem;
-    font-weight: 800;
-    overflow-wrap: anywhere;
-}
-
-.kv-facts {
-    color: var(--kv-muted);
-    font-size: 0.84rem;
-    font-weight: 700;
-}
-
-.kv-estimate {
-    margin: 10px 0 0;
-    color: var(--kv-blue);
-    font-size: 0.84rem;
-    font-weight: 700;
-}
-
-.kv-preview-scroll {
-    width: 100%;
-    max-height: 300px;
-    overflow: auto;
-    border: 1px solid var(--kv-border);
-    border-radius: 14px;
-    background: #ffffff;
-}
-
-.kv-preview-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.82rem;
-}
-
-.kv-preview-table thead {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-}
-
-.kv-preview-table th {
-    padding: 9px 10px;
-    background: #eef2f9;
-    color: #23324a;
-    font-weight: 800;
-    text-align: left;
-    white-space: nowrap;
-}
-
-.kv-preview-table td {
-    padding: 8px 10px;
-    border-top: 1px solid #eef2f7;
-    color: #33415a;
-    white-space: nowrap;
-}
-
-.kv-preview-caption {
-    margin: 0;
-    color: #7d8aa1;
-    font-size: 0.8rem;
-}
-
-.kv-feature-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 18px;
-    margin-top: 20px;
-}
-
-.kv-feature-grid article {
-    padding: 22px;
-    border-radius: 24px;
-    background: var(--kv-navy);
-    color: #ffffff;
-}
-
-.kv-feature-grid span {
-    color: #8fb1ff;
-    font-weight: 900;
-}
-
-.kv-feature-grid h2 {
-    margin: 16px 0 10px;
-    font-size: 1.1rem;
-    color: #ffffff;
-}
-
-.kv-feature-grid p {
-    margin: 0;
-    color: #d5ddef;
-    line-height: 1.6;
-}
-
-.kv-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 99999;
-    display: grid;
-    place-items: center;
-    padding: 20px;
-    background: rgba(11, 18, 34, 0.55);
-}
-
-.kv-loading-panel {
-    width: min(430px, 100%);
-    padding: 26px;
-    border-radius: 26px;
-    background: #ffffff;
-    box-shadow: 0 26px 60px rgba(8, 15, 32, 0.35);
-    text-align: left;
-}
-
-.kv-loading-title {
-    margin: 0;
-    font-size: 1.24rem;
-    letter-spacing: -0.02em;
-    color: var(--kv-ink);
-}
-
-.kv-loading-message {
-    margin: 10px 0 20px;
-    color: var(--kv-muted);
-    font-size: 0.94rem;
-}
-
-.kv-loading-eta {
-    margin: 10px 0 4px;
-    color: #8a97ad;
-    font-size: 0.82rem;
-    font-weight: 600;
-}
-
-.kv-loading-eta-running {
-    margin: 0 0 20px;
-    color: #8a97ad;
-    font-size: 0.82rem;
-    font-weight: 600;
-}
-
-.kv-progress-track {
-    height: 12px;
-    overflow: hidden;
-    border-radius: 999px;
-    background: #e7ecf5;
-}
-
-.kv-progress-bar {
-    height: 100%;
-    border-radius: inherit;
-    background: linear-gradient(90deg, #1b49d8, #4b8bff);
-    transition: width 320ms ease;
-}
-
-.kv-loading-percent {
-    margin: 12px 0 0;
-    color: var(--kv-navy);
-    font-size: 0.9rem;
-    font-weight: 800;
-}
-
-.kv-loading-error {
-    margin: 16px 0 0;
-    padding: 12px 14px;
-    border-radius: 14px;
-    background: #fff1f2;
-    color: #be123c;
-    font-size: 0.9rem;
-    font-weight: 700;
-}
-
 [data-testid="stAlert"] {
     border-radius: 14px;
 }
 
-/* --- Top bar & navigasi --- */
-.kv-brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.kv-brand-mark {
-    display: grid;
-    place-items: center;
-    width: 42px;
-    height: 42px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #1b49d8, #16213e);
-    color: #ffffff;
-    font-weight: 900;
-    font-size: 1.15rem;
-    box-shadow: 0 12px 26px rgba(27, 73, 216, 0.3);
-}
-
-.kv-brand-text {
-    display: flex;
-    flex-direction: column;
-    font-weight: 900;
-    font-size: 1.05rem;
-    color: var(--kv-ink);
-    line-height: 1.1;
-}
-
-.kv-brand-text small {
-    color: var(--kv-muted);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-}
-
-.kv-nav-note {
-    display: inline-block;
-    padding: 8px 12px;
-    border-radius: 12px;
-    background: #eef2f9;
-    color: #7d8aa1;
-    font-size: 0.78rem;
-    font-weight: 800;
-}
-
+/* --- Tombol navigasi akun (lebih ringan dari tombol utama) --- */
 .st-key-kv-nav-back button,
 .st-key-kv-nav-riwayat button,
 .st-key-kv-nav-masuk button,
@@ -430,19 +128,15 @@ div[data-baseweb="select"] > div {
     width: auto !important;
     min-height: 42px !important;
     padding: 0 16px !important;
-    border: 1px solid var(--kv-line) !important;
+    border: 1px solid #d8e0ec !important;
     border-radius: 12px !important;
     background: #ffffff !important;
-    color: var(--kv-navy) !important;
+    color: #16213e !important;
     box-shadow: none !important;
     font-weight: 800 !important;
 }
 
-.st-key-kv-hero .kv-brand {
-    margin: 0 0 4px;
-}
-
-/* Tombol akun rata kanan di baris header hero */
+/* Tombol akun rata kanan di baris header hero. */
 .st-key-kv-nav-masuk,
 .st-key-kv-nav-keluar,
 .st-key-kv-nav-riwayat {
@@ -450,134 +144,12 @@ div[data-baseweb="select"] > div {
     justify-content: flex-end;
 }
 
-/* --- Home: banner batas & kartu alat --- */
-.kv-limit-banner {
-    margin: 6px 0 4px;
-    padding: 12px 16px;
-    border-radius: 16px;
-    border: 1px solid var(--kv-blue-soft);
-    background: #f2f6ff;
-    color: #33415a;
-    font-size: 0.9rem;
-    line-height: 1.55;
-}
-
-.kv-limit-banner.is-user {
-    border-color: #bfe3c8;
-    background: #f1fbf4;
-}
-
-.kv-limit-tag {
-    padding: 3px 9px;
-    border-radius: 999px;
-    background: var(--kv-navy);
-    color: #ffffff;
-    font-size: 0.72rem;
-    font-weight: 800;
-    letter-spacing: 0.03em;
-}
-
-.kv-section-title {
-    margin: 22px 0 12px;
-    font-size: 1.05rem;
-    font-weight: 900;
-    letter-spacing: -0.01em;
-    color: var(--kv-ink);
-}
-
-.kv-tool-heading {
-    margin: 0 0 12px;
-    font-size: 1.15rem;
-    font-weight: 900;
-    color: var(--kv-ink);
-}
-
-.kv-tool-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-}
-
-.kv-tool-card {
-    padding: 20px;
-    border-radius: 22px;
-    border: 1px solid var(--kv-border);
-    background: #ffffff;
-    box-shadow: 0 12px 30px rgba(55, 76, 118, 0.08);
-}
-
-.kv-tool-icon {
-    display: inline-grid;
-    place-items: center;
-    min-width: 52px;
-    padding: 7px 10px;
-    border-radius: 12px;
-    background: var(--kv-blue-soft);
-    color: var(--kv-blue-ink);
-    font-size: 0.76rem;
-    font-weight: 900;
-    letter-spacing: 0.04em;
-}
-
-.kv-tool-card h3 {
-    margin: 14px 0 8px;
-    font-size: 1.05rem;
-    color: var(--kv-ink);
-}
-
-.kv-tool-card p {
-    margin: 0;
-    color: var(--kv-muted);
-    font-size: 0.9rem;
-    line-height: 1.6;
-}
-
-/* --- Riwayat --- */
-.kv-history-item {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 0;
-}
-
-.kv-job-name {
-    font-weight: 800;
-    color: var(--kv-ink);
-    overflow-wrap: anywhere;
-}
-
-.kv-job-status {
-    padding: 5px 11px;
-    border-radius: 999px;
-    font-size: 0.72rem;
-    font-weight: 900;
-    letter-spacing: 0.03em;
-    background: #eef2f9;
-    color: #5d6b82;
-}
-
-.kv-job-status.is-completed {
-    background: #e6f7ec;
-    color: #15803d;
-}
-
-.kv-job-status.is-processing {
-    background: #fff4e5;
-    color: #b45309;
-}
-
-.kv-job-status.is-failed {
-    background: #ffe9ec;
-    color: #be123c;
-}
-
 [data-testid="stLinkButton"] a {
     min-height: 44px;
     border-radius: 12px !important;
-    border: 1px solid var(--kv-line) !important;
+    border: 1px solid #d8e0ec !important;
     background: #ffffff !important;
-    color: var(--kv-navy) !important;
+    color: #16213e !important;
     font-weight: 800 !important;
     display: inline-flex;
     align-items: center;
@@ -596,11 +168,5 @@ div[data-baseweb="select"] > div {
 
     .st-key-kv-converter {
         padding: 18px;
-    }
-
-    .kv-steps,
-    .kv-feature-grid,
-    .kv-tool-grid {
-        grid-template-columns: 1fr;
     }
 }
