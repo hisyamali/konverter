@@ -459,7 +459,7 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
     ) == st.session_state.get("upload_sig") else (2 if st.session_state.get("converting") else 1)
 
     with st.container(key="kv-header"):
-        _brand_row(user, back_label="← Pilih alat lain")
+        _brand_row(user, back_label="← Kembali")
 
     with st.container(key="kv-hero"):
         st.markdown(_hero_html(subtitle), unsafe_allow_html=True)
