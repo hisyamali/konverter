@@ -1,6 +1,6 @@
 """Siapkan database, table, dan bucket Appwrite untuk aplikasi Konverter.
 
-Jalankan **sekali** dari root repo. Butuh API key Appwrite dengan scope database
+Jalankan dari root repo. Butuh API key Appwrite dengan scope database
 (database/table/column/index) dan storage (bucket). API key hanya dipakai saat
 setup -- jangan simpan di Streamlit Secrets dan hapus setelah selesai.
 
@@ -9,8 +9,11 @@ Contoh (Windows PowerShell):
     $env:APPWRITE_API_KEY = "standard_xxxx"
     python scripts/appwrite_setup.py --endpoint https://sgp.cloud.appwrite.io/v1 --project-id <PROJECT_ID>
 
-Script ini idempotent: aman dijalankan berulang, objek yang sudah ada dilewati.
-Di akhir, blok TOML untuk Streamlit Secrets dicetak ke layar.
+Script ini **idempotent**: sebelum membuat, tiap objek diperiksa lebih dulu
+lewat API *get*. Jadi aman dijalankan berulang dan tidak menabrak kuota plan
+(Appwrite menolak `create` dengan error "maximum number of databases" alih-alih
+409 ketika kuota sudah penuh). Di akhir, blok TOML untuk Streamlit Secrets
+dicetak ke layar.
 """
 
 import argparse
@@ -30,7 +33,9 @@ except ImportError:  # pragma: no cover - dipakai manual
 
 DEFAULT_ENDPOINT = "https://cloud.appwrite.io/v1"
 DEFAULT_DATABASE = "konverter"
+DEFAULT_DATABASE_NAME = "Konverter"
 DEFAULT_TABLE = "jobs"
+DEFAULT_TABLE_NAME = "Jobs"
 DEFAULT_SOURCES = "sources"
 DEFAULT_RESULTS = "results"
 MAX_FILE_MB = 50
@@ -46,7 +51,8 @@ COLUMNS = [
     {"key": "result_name", "type": "varchar", "size": 255, "required": False},
     {"key": "result_path", "type": "varchar", "size": 512, "required": False},
     {"key": "output_size_bytes", "type": "bigint", "required": False},
-    {"key": "status", "type": "varchar", "size": 16, "required": True, "default": "processing"},
+    # Appwrite tidak mengizinkan kolom wajib punya default -> required=False.
+    {"key": "status", "type": "varchar", "size": 16, "required": False, "default": "processing"},
     {"key": "error", "type": "text", "required": False},
     {"key": "page_count", "type": "integer", "required": False},
     {"key": "row_count", "type": "integer", "required": False},
@@ -70,19 +76,52 @@ TABLE_PERMISSIONS = [Permission.create(Role.users())]
 BUCKET_PERMISSIONS = [Permission.create(Role.users())]
 
 
+def _message(exc: Exception) -> str:
+    """Teks pesan error Appwrite (fallback ke str)."""
+    return str(getattr(exc, "message", None) or exc or "")
+
+
 def _conflict(exc: Exception) -> bool:
-    """True bila error berarti objek sudah ada (HTTP 409)."""
-    return getattr(exc, "code", 0) == 409
+    """True bila error berarti objek sudah ada."""
+    if getattr(exc, "code", 0) == 409:
+        return True
+
+    low = _message(exc).lower()
+    return "already exists" in low or "already been created" in low
+
+
+def _limit_reached(exc: Exception) -> bool:
+    """True bila error karena kuota plan (bukan karena objek tidak ada)."""
+    low = _message(exc).lower()
+    return "maximum number" in low or "has reached" in low or "limit" in low
+
+
+def _exists(getter) -> bool:
+    """True bila objek sudah ada.
+
+    ``getter`` memanggil endpoint *get*. Appwrite mengembalikan HTTP 404 bila
+    belum ada. Bila gagal karena kuota plan, kita anggap objek sudah ada agar
+    skrip tidak mencoba ``create`` (yang justru memicu error kuota).
+    """
+    try:
+        getter()
+        return True
+    except AppwriteException as exc:
+        if getattr(exc, "code", 0) == 404:
+            return False
+        if _limit_reached(exc):
+            return True
+        raise
 
 
 def _ensure(action: str, callback):
-    """Jalankan pembuatan objek; lewati bila sudah ada."""
+    """Jalankan pembuatan objek; lewati bila ternyata sudah ada."""
     try:
         result = callback()
         print(f"  + {action}: dibuat")
         return result
     except AppwriteException as exc:
-        if _conflict(exc):
+        if _conflict(exc) or _limit_reached(exc):
             print(f"  = {action}: sudah ada, dilewati")
             return None
         print(f"  ! {action}: gagal -> {exc}")
@@ -103,37 +142,49 @@ def setup(database_id: str, table_id: str, sources_id: str, results_id: str,
     storage = Storage(client)
 
     print("1) Database")
-    _ensure(f"database '{database_id}'", lambda: tables.create(database_id, "Konverter"))
+    if _exists(lambda: tables.get(database_id)):
+        print(f"  = database '{database_id}': sudah ada, dilewati")
+    else:
+        _ensure(
+            f"database '{database_id}'",
+            lambda: tables.create(database_id, DEFAULT_DATABASE_NAME),
+        )
 
-    print("2) Table 'jobs' (kolom + index)")
-    _ensure(
-        f"table '{table_id}'",
-        lambda: tables.create_table(
-            database_id,
-            table_id,
-            "Jobs",
-            permissions=TABLE_PERMISSIONS,
-            row_security=True,
-            enabled=True,
-            columns=COLUMNS,
-            indexes=INDEXES,
-        ),
-    )
+    print(f"2) Table '{table_id}' (kolom + index)")
+    if _exists(lambda: tables.get_table(database_id, table_id)):
+        print(f"  = table '{table_id}': sudah ada, dilewati")
+    else:
+        _ensure(
+            f"table '{table_id}'",
+            lambda: tables.create_table(
+                database_id,
+                table_id,
+                DEFAULT_TABLE_NAME,
+                permissions=TABLE_PERMISSIONS,
+                row_security=True,
+                enabled=True,
+                columns=COLUMNS,
+                indexes=INDEXES,
+            ),
+        )
 
     print("3) Bucket storage")
     for bucket_id, name in ((sources_id, "Sources"), (results_id, "Results")):
-        _ensure(
-            f"bucket '{bucket_id}'",
-            lambda bucket_id=bucket_id, name=name: storage.create_bucket(
-                bucket_id,
-                name,
-                permissions=BUCKET_PERMISSIONS,
-                file_security=True,
-                enabled=True,
-                maximum_file_size=MAX_FILE_MB * 1024 * 1024,
-                allowed_file_extensions=ALLOWED_EXTENSIONS,
-            ),
-        )
+        if _exists(lambda bucket_id=bucket_id: storage.get_bucket(bucket_id)):
+            print(f"  = bucket '{bucket_id}': sudah ada, dilewati")
+        else:
+            _ensure(
+                f"bucket '{bucket_id}'",
+                lambda bucket_id=bucket_id, name=name: storage.create_bucket(
+                    bucket_id,
+                    name,
+                    permissions=BUCKET_PERMISSIONS,
+                    file_security=True,
+                    enabled=True,
+                    maximum_file_size=MAX_FILE_MB * 1024 * 1024,
+                    allowed_file_extensions=ALLOWED_EXTENSIONS,
+                ),
+            )
 
 
 def parse_args() -> argparse.Namespace:
@@ -150,6 +201,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sources-bucket", default=DEFAULT_SOURCES)
     parser.add_argument("--results-bucket", default=DEFAULT_RESULTS)
     return parser.parse_args()
+
+
+def print_toml(args: argparse.Namespace) -> None:
+    print()
+    print("Selesai. Tempel blok berikut ke Streamlit Secrets (.streamlit/secrets.toml):")
+    print()
+    print("[appwrite]")
+    print(f'endpoint = "{args.endpoint}"')
+    print(f'project_id = "{args.project_id}"')
+    print(f'database_id = "{args.database_id}"')
+    print(f'jobs_table_id = "{args.table_id}"')
+    print(f'sources_bucket_id = "{args.sources_bucket}"')
+    print(f'results_bucket_id = "{args.results_bucket}"')
+    print()
+    print("[app]")
+    print('backend = "appwrite"')
+    print()
+    print("Catatan: hapus API key ini setelah setup selesai.")
 
 
 def main() -> int:
@@ -174,21 +243,7 @@ def main() -> int:
     except AppwriteException:
         return 1
 
-    print()
-    print("Selesai. Tempel blok berikut ke Streamlit Secrets (.streamlit/secrets.toml):")
-    print()
-    print("[appwrite]")
-    print(f'endpoint = "{args.endpoint}"')
-    print(f'project_id = "{args.project_id}"')
-    print(f'database_id = "{args.database_id}"')
-    print(f'jobs_table_id = "{args.table_id}"')
-    print(f'sources_bucket_id = "{args.sources_bucket}"')
-    print(f'results_bucket_id = "{args.results_bucket}"')
-    print()
-    print("[app]")
-    print('backend = "appwrite"')
-    print()
-    print("Catatan: hapus API key ini setelah setup selesai.")
+    print_toml(args)
     return 0
 
 
