@@ -223,4 +223,6 @@ marimo/_lsp/
 __marimo__/
 
 # Streamlit
-.streamlit/secrets.toml
+# Jangan pernah commit kredensial. Pola ini menangkap secrets.toml,
+# secrets1.toml, secrets2.toml, dsb. (secrets.toml.example tetap terlacak).
+.streamlit/secrets*.toml
