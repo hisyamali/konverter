@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}?v=20261103-tailwind">
 </head>
 <body class="kv-app-bg min-h-screen font-sans text-kv-ink">
+    {% include "_navbar.html" %}
     <main class="mx-auto w-[min(1100px,100%-32px)] py-12 max-[780px]:w-[min(100%-22px,560px)] max-[780px]:py-[18px]">
         <!-- Hero utama: menjelaskan fungsi aplikasi dan menampung form konversi. -->
         <section class="grid min-h-[520px] grid-cols-1 items-start gap-7 rounded-[34px] bg-white/[0.82] p-[42px] shadow-[0_24px_70px_rgba(34,54,96,0.16)] backdrop-blur-[18px] max-[780px]:min-h-0 max-[780px]:rounded-[28px] max-[780px]:p-6">

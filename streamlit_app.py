@@ -177,24 +177,46 @@ def _limit_banner_html(user, limit_mb: int) -> str:
     )
 
 
-def _tool_cards_html() -> str:
-    card_cls = (
-        "rounded-[22px] border border-kv-border bg-white p-5 shadow-[0_12px_30px_rgba(55,76,118,0.08)]"
-    )
-    icon_cls = (
-        "inline-grid min-w-[52px] place-items-center rounded-xl bg-kv-blue-soft px-2.5 py-[7px] "
-        "text-[0.76rem] font-black tracking-[0.04em] text-kv-blue-ink"
-    )
+def _tool_card_html(icon: str, title: str, description: str) -> str:
+    """Markup satu kartu alat (HTML statis; klik ditangani tombol overlay)."""
     return (
-        '<div class="grid grid-cols-2 gap-4 max-[780px]:grid-cols-1">'
-        f'<article class="{card_cls}"><span class="{icon_cls}">PDF</span>'
-        '<h3 class="mt-3.5 mb-2 text-[1.05rem] text-kv-ink">PDF ke Excel</h3>'
-        '<p class="m-0 text-[0.9rem] leading-[1.6] text-kv-muted">Gabungkan tabel dari seluruh halaman menjadi satu sheet Excel.</p></article>'
-        f'<article class="{card_cls}"><span class="{icon_cls}">CSV</span>'
-        '<h3 class="mt-3.5 mb-2 text-[1.05rem] text-kv-ink">CSV ke Excel</h3>'
-        '<p class="m-0 text-[0.9rem] leading-[1.6] text-kv-muted">Deteksi pemisah otomatis, langsung jadi .xlsx yang rapi.</p></article>'
-        "</div>"
+        '<article class="kv-tool-card rounded-[22px] border border-kv-border bg-white p-5 '
+        'shadow-[0_12px_30px_rgba(55,76,118,0.08)]">'
+        '<span class="inline-grid min-w-[52px] place-items-center rounded-xl bg-kv-blue-soft '
+        f'px-2.5 py-[7px] text-[0.76rem] font-black tracking-[0.04em] text-kv-blue-ink">{icon}</span>'
+        f'<h3 class="mt-3.5 mb-2 text-[1.05rem] text-kv-ink">{title}</h3>'
+        f'<p class="m-0 text-[0.9rem] leading-[1.6] text-kv-muted">{description}</p>'
+        "</article>"
     )
+
+
+def _render_tool_cards() -> None:
+    """Kartu pilihan alat; seluruh area kartu diklik lewat tombol transparan."""
+    options = (
+        (
+            "kv-tool-pdf",
+            "kv-pick-pdf",
+            "PDF",
+            "PDF ke Excel",
+            "Gabungkan tabel dari seluruh halaman menjadi satu sheet Excel.",
+            "pdf",
+        ),
+        (
+            "kv-tool-csv",
+            "kv-pick-csv",
+            "CSV",
+            "CSV ke Excel",
+            "Deteksi pemisah otomatis, langsung jadi .xlsx yang rapi.",
+            "csv",
+        ),
+    )
+    columns = st.columns(2)
+    for column, (container_key, button_key, icon, title, description, page) in zip(columns, options):
+        with column:
+            with st.container(key=container_key):
+                st.markdown(_tool_card_html(icon, title, description), unsafe_allow_html=True)
+                if st.button(title, key=button_key):
+                    _go(page)
 
 
 def _preview_html(kind: str, data: dict, filename: str, size_bytes: int) -> str:
@@ -408,31 +430,22 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
 
 
 def _page_home(user, limit_mb: int) -> None:
-    with st.container(key="kv-hero"):
+    with st.container(key="kv-header"):
         _brand_row(user)
+
+    with st.container(key="kv-hero"):
         st.markdown(_hero_html(), unsafe_allow_html=True)
         st.markdown(_limit_banner_html(user, limit_mb), unsafe_allow_html=True)
-
-        st.markdown('<p class="mt-[22px] mb-3 p-0 text-[1.05rem] font-black tracking-[-0.01em] '
-                    'text-kv-ink">Pilih alat</p>', unsafe_allow_html=True)
-        st.markdown(_tool_cards_html(), unsafe_allow_html=True)
-
-        pick = st.columns(2)
-        with pick[0]:
-            if st.button("PDF ke Excel", type="primary", key="kv-pick-pdf"):
-                _go("pdf")
-        with pick[1]:
-            if st.button("CSV ke Excel", type="primary", key="kv-pick-csv"):
-                _go("csv")
+        _render_tool_cards()
 
     st.markdown(_feature_html(), unsafe_allow_html=True)
 
-    if not sb.is_configured():
-        st.caption(
-            "Riwayat & login belum dikonfigurasi. Isi blok `[supabase]` (jalankan "
-            "`supabase/schema.sql`) atau `[appwrite]` (jalankan `scripts/appwrite_setup.py`) "
-            "di `.streamlit/secrets.toml` untuk mengaktifkannya."
-        )
+    # if not sb.is_configured():
+    #     st.caption(
+    #         "Riwayat & login belum dikonfigurasi. Isi blok `[supabase]` (jalankan "
+    #         "`supabase/schema.sql`) atau `[appwrite]` (jalankan `scripts/appwrite_setup.py`) "
+    #         "di `.streamlit/secrets.toml` untuk mengaktifkannya."
+    #     )
 
 
 def _page_tool(kind: str, user, limit_mb: int) -> None:
@@ -446,8 +459,10 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
         "output_sig"
     ) == st.session_state.get("upload_sig") else (2 if st.session_state.get("converting") else 1)
 
-    with st.container(key="kv-hero"):
+    with st.container(key="kv-header"):
         _brand_row(user, back_label="← Pilih alat lain")
+
+    with st.container(key="kv-hero"):
         st.markdown(_hero_html(subtitle), unsafe_allow_html=True)
         st.markdown(_limit_banner_html(user, limit_mb), unsafe_allow_html=True)
 
@@ -608,8 +623,10 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
 
 
 def _page_auth() -> None:
-    with st.container(key="kv-hero"):
+    with st.container(key="kv-header"):
         _brand_row(None, back_label="← Kembali", show_login=False)
+
+    with st.container(key="kv-hero"):
         st.markdown(
             _copy_html(
                 "Akun",
@@ -704,8 +721,10 @@ def _auth_error(exc: Exception) -> str:
 
 
 def _page_history(user) -> None:
-    with st.container(key="kv-hero"):
+    with st.container(key="kv-header"):
         _brand_row(user, back_label="← Kembali ke alat", show_history=False)
+
+    with st.container(key="kv-hero"):
         st.markdown(
             _copy_html(
                 "Riwayat",

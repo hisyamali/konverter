@@ -209,7 +209,7 @@ Alternatif Streamlit Cloud: isi **App settings → Secrets** dengan blok di atas
 
 **Catatan Appwrite**: file sumber/hasil disimpan tanpa signed URL — tombol unduh di riwayat mengambil byte lewat server lalu memakai tombol unduh Streamlit ("Siapkan unduhan"). Izin baca/ubah/hapus diatur **per baris/file** (`Role.user`), dan table/bucket hanya mengizinkan `Create` untuk pengguna login, sehingga data antar pengguna tetap terisolasi.
 
-> Fitur akun, riwayat, dan batas ukuran bertingkat hanya ada di **varian Streamlit**. UI Flask tetap tanpa login (batas tunggal `KONVERTER_MAX_UPLOAD_MB`).
+> Fitur akun, riwayat, dan batas ukuran bertingkat hanya ada di **varian Streamlit**. UI Flask tanpa login internal — navbar-nya menampilkan tombol **Masuk** yang mengarah ke aplikasi Streamlit bila `KONVERTER_STREAMLIT_URL` diisi (batas tunggal `KONVERTER_MAX_UPLOAD_MB`).
 
 ### Menjaga app tetap bangun (keep-alive)
 
@@ -275,6 +275,7 @@ Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, j
 | `KONVERTER_MAX_UPLOAD_MB` | `128` | Batas ukuran file unggahan (MB) |
 | `KONVERTER_GUEST_MAX_UPLOAD_MB` | `10` | Batas unggahan untuk **tamu** (tanpa login) di varian Streamlit |
 | `KONVERTER_USER_MAX_UPLOAD_MB` | `50` | Batas unggahan untuk pengguna yang **login** di varian Streamlit |
+| `KONVERTER_STREAMLIT_URL` | *(kosong)* | URL aplikasi Streamlit untuk tombol **Masuk** di navbar Flask. Kosong = tombol disembunyikan |
 | `SUPABASE_URL` | *(kosong)* | Project URL Supabase (alternatif blok `[supabase]` di `secrets.toml`). Kosong = mode tamu saja |
 | `SUPABASE_ANON_KEY` | *(kosong)* | anon public key Supabase. Jangan pakai `service_role` |
 | `KONVERTER_BACKEND` | `auto` | Backend akun: `auto`, `supabase`, atau `appwrite` (alternatif `[app] backend`) |
