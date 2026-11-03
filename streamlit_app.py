@@ -400,8 +400,8 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
 
     with columns[0]:
         st.markdown(
-            '<div class="mb-1 flex items-center gap-3">'
-            '<span class="grid size-[42px] place-items-center rounded-2xl kv-cta text-[1.15rem] '
+            '<div class="flex items-center gap-3">'
+            '<span class="grid size-[36px] place-items-center rounded-2xl kv-cta text-[1.05rem] '
             'font-black text-white shadow-[0_12px_26px_rgba(27,73,216,0.3)]">K</span>'
             '<span class="flex flex-col text-[1.05rem] font-black leading-[1.1] text-kv-ink">Konverter'
             '<small class="text-[0.72rem] font-bold tracking-[0.02em] text-kv-muted">PDF &amp; CSV → Excel</small>'
@@ -446,7 +446,6 @@ def _page_home(user, limit_mb: int) -> None:
     #         "`supabase/schema.sql`) atau `[appwrite]` (jalankan `scripts/appwrite_setup.py`) "
     #         "di `.streamlit/secrets.toml` untuk mengaktifkannya."
     #     )
-
 
 def _page_tool(kind: str, user, limit_mb: int) -> None:
     title = "PDF ke Excel" if kind == "pdf-to-excel" else "CSV ke Excel"

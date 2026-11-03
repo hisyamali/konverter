@@ -182,6 +182,30 @@ div[data-baseweb="select"] > div {
     margin-bottom: 18px;
 }
 
+/* Biarkan isi header tumbuh setinggi kontennya agar brand tepat di tengah
+   (Streamlit membatasi tinggi elemen markdown sehingga brand tampak turun). */
+.st-key-kv-header .stMarkdown,
+.st-key-kv-header [data-testid="stElementContainer"] {
+    height: auto !important;
+}
+
+/* Netralkan margin negatif bawaan markdown yang membuat brand turun. */
+.st-key-kv-header [data-testid="stMarkdownContainer"] {
+    margin-bottom: 0 !important;
+}
+
+.st-key-kv-header [data-testid="stMarkdownContainer"] p {
+    margin-bottom: 0 !important;
+}
+
+/* Kontrol akun rata kanan di header (rapat konten, tanpa jarak baris ekstra). */
+.st-key-kv-header [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child [data-testid="stMarkdownContainer"],
+.st-key-kv-header [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child [data-testid="stMarkdownContainer"] > div {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
 /* --- Kartu alat: tombol transparan menutupi seluruh kartu agar bisa diklik --- */
 .st-key-kv-tool-pdf,
 .st-key-kv-tool-csv {
