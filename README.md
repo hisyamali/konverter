@@ -188,7 +188,9 @@ export APPWRITE_API_KEY="standard_xxxx"
 python scripts/appwrite_setup.py --endpoint https://sgp.cloud.appwrite.io/v1 --project-id <PROJECT_ID>
 ```
 
-Skrip ini **idempotent** (aman diulang): membuat database `konverter`, table `jobs` (14 kolom + index `user_created`), dan bucket privat `sources`/`results`, lalu mencetak blok TOML siap tempel. **Hapus API key setelah setup** — jangan simpan di Secrets.
+Skrip ini **idempotent** (aman diulang): membuat database `konverter`, table `jobs` (14 kolom + index `user_created`), dan bucket privat `sources`/`results`, lalu mencetak blok TOML siap tempel. Bucket yang sudah ada **diperiksa dan pengaturannya disamakan** (file security, ekstensi `pdf/csv/xlsx`, batas 50 MB), kolom yang belum ada ditambahkan. Bila setup gagal, skrip mencetak pesan error Appwrite yang sebenarnya (termasuk kode 401/403). **Hapus API key setelah setup** — jangan simpan di Secrets.
+
+> **Plan Free Appwrite hanya mengizinkan 1 bucket.** Bila bucket `results` ditolak karena kuota, skrip tidak berhenti: hasil konversi diarahkan ke bucket `sources` dan blok TOML yang dicetak memakai `results_bucket_id = "sources"`. Ini aman karena file dipisahkan oleh path `<user_id>/<job_id>/<nama-file>` dan izin diberikan per file.
 
 **3. Isi kredensial** (atau tempel hasil cetak skrip):
 
@@ -199,11 +201,13 @@ project_id = "<project-id>"
 database_id = "konverter"
 jobs_table_id = "jobs"
 sources_bucket_id = "sources"
-results_bucket_id = "results"
+results_bucket_id = "sources"
 
 [app]
 backend = "appwrite"
 ```
+
+`results_bucket_id` disamakan dengan `sources` karena plan Free hanya memberi 1 bucket. Pada plan berbayar dengan dua bucket, isi `results_bucket_id = "results"`.
 
 Alternatif Streamlit Cloud: isi **App settings → Secrets** dengan blok di atas. Alternatif env var: `APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`.
 
@@ -233,7 +237,7 @@ Konfigurasi yang didukung: dua app Streamlit terpisah, masing-masing dengan **Se
   $env:APPWRITE_API_KEY = "standard_xxxx"
   python scripts/appwrite_setup.py --endpoint https://sgp.cloud.appwrite.io/v1 --project-id <PROJECT_ID>
   ```
-  (hapus API key setelah setup; skrip idempotent)
+  (hapus API key setelah setup; skrip idempotent. Pada plan Free, skrip otomatis memakai `sources` untuk sumber sekaligus hasil.)
 - Secrets (Settings → Secrets), **tanpa** blok `[supabase]`:
   ```toml
   [appwrite]
@@ -242,7 +246,7 @@ Konfigurasi yang didukung: dua app Streamlit terpisah, masing-masing dengan **Se
   database_id = "konverter"
   jobs_table_id = "jobs"
   sources_bucket_id = "sources"
-  results_bucket_id = "results"
+  results_bucket_id = "sources"
 
   [app]
   backend = "appwrite"

@@ -9,7 +9,8 @@ Tiga bagian:
 1. **Auth** opsional (email + password) lewat Appwrite Account.
 2. **Riwayat**: baris pekerjaan di table ``jobs`` (Appwrite TablesDB).
 3. **Penyimpanan privat**: file sumber & hasil ``.xlsx`` di bucket ``sources`` /
-   ``results``; izin per file hanya untuk pemiliknya (``Role.user``).
+   ``results``; izin per file hanya untuk pemiliknya (``Role.user``). Pada plan
+   Free Appwrite (1 bucket) keduanya memakai ``sources``.
 
 Berbeda dari Supabase, klien Appwrite adalah *server SDK*: satu klien per sesi
 Streamlit dan **tidak pernah** dibagikan antar pengguna. Semua operasi defensif
@@ -96,7 +97,9 @@ def _config() -> dict:
         "database_id": _pick(secrets.get("database_id"), "APPWRITE_DATABASE_ID", "konverter"),
         "jobs_table_id": _pick(secrets.get("jobs_table_id"), "APPWRITE_JOBS_TABLE_ID", "jobs"),
         "sources_bucket_id": _pick(secrets.get("sources_bucket_id"), "APPWRITE_SOURCES_BUCKET_ID", "sources"),
-        "results_bucket_id": _pick(secrets.get("results_bucket_id"), "APPWRITE_RESULTS_BUCKET_ID", "results"),
+        # Plan Free Appwrite hanya punya 1 bucket, jadi default hasil = bucket
+        # sumber. File tetap terpisah lewat path <user_id>/<job_id>/<nama-file>.
+        "results_bucket_id": _pick(secrets.get("results_bucket_id"), "APPWRITE_RESULTS_BUCKET_ID", "sources"),
     }
 
 

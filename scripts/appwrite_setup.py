@@ -9,11 +9,23 @@ Contoh (Windows PowerShell):
     $env:APPWRITE_API_KEY = "standard_xxxx"
     python scripts/appwrite_setup.py --endpoint https://sgp.cloud.appwrite.io/v1 --project-id <PROJECT_ID>
 
-Script ini **idempotent**: sebelum membuat, tiap objek diperiksa lebih dulu
-lewat API *get*. Jadi aman dijalankan berulang dan tidak menabrak kuota plan
-(Appwrite menolak `create` dengan error "maximum number of databases" alih-alih
-409 ketika kuota sudah penuh). Di akhir, blok TOML untuk Streamlit Secrets
-dicetak ke layar.
+Script ini **idempotent**: tiap objek diperiksa lebih dulu lewat API *get*,
+lalu dibuat bila belum ada atau diperbaiki bila sudah ada. Yang diperiksa:
+
+- database ``konverter``
+- table ``jobs`` beserta seluruh kolom dan index ``user_created``
+- bucket ``sources`` (dan ``results`` bila plan mengizinkan)
+
+**Plan Free Appwrite hanya mengizinkan 1 bucket.** Bila pembuatan bucket
+``results`` ditolak karena kuota, script tidak berhenti: hasil konversi
+otomatis diarahkan ke bucket ``sources`` (satu bucket untuk sumber + hasil)
+dan blok TOML yang dicetak sudah memakai ``results_bucket_id = "sources"``.
+Pemisahan tetap aman karena path file memakai ``<user_id>/<job_id>/<nama>``
+dan izin diberikan per file oleh aplikasi.
+
+Perbedaan penting dari versi lama: error kuota plan **tidak lagi** dilaporkan
+sebagai "sudah ada", dan bila setup gagal script mencetak pesan error Appwrite
+yang sebenarnya (bukan diam-diam berhenti).
 """
 
 import argparse
@@ -22,9 +34,11 @@ import sys
 
 try:
     from appwrite.client import Client
+    from appwrite.enums.order_by import OrderBy
     from appwrite.enums.tables_db_index_type import TablesDBIndexType
     from appwrite.exception import AppwriteException
     from appwrite.permission import Permission
+    from appwrite.query import Query
     from appwrite.role import Role
     from appwrite.services.storage import Storage
     from appwrite.services.tables_db import TablesDB
@@ -69,10 +83,20 @@ INDEXES = [
         "key": "user_created",
         "type": "key",
         "attributes": ["user_id", "created_at"],
-        # Appwrite menuntut huruf besar: 'ASC' / 'DESC'.
+        # REST API create_table menerima string huruf besar: 'ASC' / 'DESC'.
         "orders": ["ASC", "DESC"],
     },
 ]
+
+# Teks pesan Appwrite yang menandakan kuota plan habis. Sengaja spesifik:
+# kata "limit" saja juga muncul di pesan lain (mis. batas ukuran file).
+QUOTA_MARKERS = (
+    "maximum number of",
+    "has reached the limit",
+    "reached the limit",
+    "upgrade your plan",
+    "plan limit",
+)
 
 # Table hanya boleh *dibuat baris* oleh user login. Izin baca/ubah/hapus
 # diberikan per baris (Role.user) oleh adapter, sehingga data tiap pengguna
@@ -81,41 +105,47 @@ TABLE_PERMISSIONS = [Permission.create(Role.users())]
 BUCKET_PERMISSIONS = [Permission.create(Role.users())]
 
 
+# ---------------------------------------------------------------------------
+# Bantuan error
+# ---------------------------------------------------------------------------
 def _message(exc: Exception) -> str:
     """Teks pesan error Appwrite (fallback ke str)."""
     return str(getattr(exc, "message", None) or exc or "")
 
 
+def _code(exc: Exception) -> int:
+    """Kode HTTP error Appwrite (0 bila tidak ada)."""
+    return int(getattr(exc, "code", 0) or 0)
+
+
 def _conflict(exc: Exception) -> bool:
     """True bila error berarti objek sudah ada."""
-    if getattr(exc, "code", 0) == 409:
+    if _code(exc) == 409:
         return True
 
     low = _message(exc).lower()
     return "already exists" in low or "already been created" in low
 
 
-def _limit_reached(exc: Exception) -> bool:
-    """True bila error karena kuota plan (bukan karena objek tidak ada)."""
+def _quota_error(exc: Exception) -> bool:
+    """True bila error karena kuota plan (bukan karena objek sudah ada)."""
     low = _message(exc).lower()
-    return "maximum number" in low or "has reached" in low or "limit" in low
+    return any(marker in low for marker in QUOTA_MARKERS)
 
 
 def _exists(getter) -> bool:
     """True bila objek sudah ada.
 
     ``getter`` memanggil endpoint *get*. Appwrite mengembalikan HTTP 404 bila
-    belum ada. Bila gagal karena kuota plan, kita anggap objek sudah ada agar
-    skrip tidak mencoba ``create`` (yang justru memicu error kuota).
+    belum ada. Error lain (401, 403, jaringan) sengaja diteruskan supaya
+    terlihat oleh pemanggil -- bukan disamarkan sebagai "sudah ada".
     """
     try:
         getter()
         return True
     except AppwriteException as exc:
-        if getattr(exc, "code", 0) == 404:
+        if _code(exc) == 404:
             return False
-        if _limit_reached(exc):
-            return True
         raise
 
 
@@ -126,11 +156,52 @@ def _ensure(action: str, callback):
         print(f"  + {action}: dibuat")
         return result
     except AppwriteException as exc:
-        if _conflict(exc) or _limit_reached(exc):
+        if _conflict(exc):
             print(f"  = {action}: sudah ada, dilewati")
             return None
-        print(f"  ! {action}: gagal -> {exc}")
+        print(f"  ! {action}: gagal -> {_message(exc)}")
         raise
+
+
+# ---------------------------------------------------------------------------
+# Table: kolom + index
+# ---------------------------------------------------------------------------
+def _create_column(tables: TablesDB, database_id: str, table_id: str, column: dict):
+    """Buat satu kolom sesuai tipe di ``COLUMNS``."""
+    key = column["key"]
+    required = bool(column.get("required", False))
+    default = column.get("default")
+    kind = column["type"]
+
+    if kind == "varchar":
+        return tables.create_varchar_column(
+            database_id, table_id, key, float(column.get("size", 255)), required, default=default
+        )
+    if kind == "bigint":
+        return tables.create_big_int_column(database_id, table_id, key, required, default=default)
+    if kind == "integer":
+        return tables.create_integer_column(database_id, table_id, key, required, default=default)
+    if kind == "text":
+        return tables.create_text_column(database_id, table_id, key, required, default=default)
+    if kind == "datetime":
+        return tables.create_datetime_column(database_id, table_id, key, required, default=default)
+
+    raise RuntimeError(f"Tipe kolom '{kind}' belum didukung skrip (kolom '{key}').")
+
+
+def _ensure_columns(tables: TablesDB, database_id: str, table_id: str) -> None:
+    """Pastikan semua kolom di ``COLUMNS`` ada (tambahkan yang belum ada)."""
+    result = tables.list_columns(database_id, table_id, queries=[Query.limit(100)])
+    existing = {getattr(column, "key", None) for column in result.columns}
+
+    for column in COLUMNS:
+        if column["key"] in existing:
+            continue
+
+        _ensure(
+            f"kolom '{column['key']}'",
+            lambda column=column: _create_column(tables, database_id, table_id, column),
+        )
 
 
 def _ensure_indexes(tables: TablesDB, database_id: str, table_id: str) -> None:
@@ -144,19 +215,103 @@ def _ensure_indexes(tables: TablesDB, database_id: str, table_id: str) -> None:
         if _exists(lambda key=key: tables.get_index(database_id, table_id, key)):
             print(f"  = index '{key}': sudah ada, dilewati")
             continue
+
+        orders = [OrderBy.ASC if order.upper() == "ASC" else OrderBy.DESC for order in index["orders"]]
         _ensure(
             f"index '{key}'",
-            lambda index=index: tables.create_index(
+            lambda index=index, orders=orders: tables.create_index(
                 database_id,
                 table_id,
                 index["key"],
                 TablesDBIndexType.KEY,
                 index["attributes"],
-                orders=index["orders"],
+                orders=orders,
             ),
         )
 
 
+# ---------------------------------------------------------------------------
+# Storage: bucket
+# ---------------------------------------------------------------------------
+def _bucket_diffs(bucket) -> list:
+    """Daftar pengaturan bucket yang tidak sesuai kebutuhan aplikasi."""
+    diffs = []
+
+    if getattr(bucket, "filesecurity", False) is not True:
+        diffs.append("file security harus ON")
+    if getattr(bucket, "enabled", False) is not True:
+        diffs.append("bucket harus enabled")
+    if int(getattr(bucket, "maximumfilesize", 0) or 0) != MAX_FILE_BYTES:
+        diffs.append(f"batas ukuran harus {MAX_FILE_BYTES} byte")
+    if sorted(getattr(bucket, "allowedfileextensions", None) or []) != sorted(ALLOWED_EXTENSIONS):
+        diffs.append("ekstensi harus " + ", ".join(ALLOWED_EXTENSIONS))
+    if sorted(getattr(bucket, "permissions", None) or []) != sorted(BUCKET_PERMISSIONS):
+        diffs.append('izin bucket harus create("users")')
+
+    return diffs
+
+
+def _ensure_bucket(storage: Storage, bucket_id: str, name: str) -> bool:
+    """Buat bucket atau samakan pengaturannya.
+
+    Mengembalikan ``False`` bila bucket tidak bisa dibuat karena kuota plan
+    (bukan melempar exception), supaya pemanggil bisa beralih ke satu bucket.
+    """
+    try:
+        bucket = storage.get_bucket(bucket_id)
+    except AppwriteException as exc:
+        if _code(exc) != 404:
+            print(f"  ! bucket '{bucket_id}': gagal diperiksa -> {_message(exc)}")
+            raise
+        bucket = None
+
+    if bucket is None:
+        try:
+            storage.create_bucket(
+                bucket_id,
+                name,
+                permissions=BUCKET_PERMISSIONS,
+                file_security=True,
+                enabled=True,
+                maximum_file_size=MAX_FILE_BYTES,
+                allowed_file_extensions=ALLOWED_EXTENSIONS,
+            )
+        except AppwriteException as exc:
+            if _conflict(exc):
+                print(f"  = bucket '{bucket_id}': sudah ada, dilewati")
+                return True
+            if _quota_error(exc):
+                print(f"  ! bucket '{bucket_id}': tidak bisa dibuat -- kuota plan habis")
+                print(f"    {_message(exc)}")
+                return False
+            print(f"  ! bucket '{bucket_id}': gagal -> {_message(exc)}")
+            raise
+
+        print(f"  + bucket '{bucket_id}': dibuat")
+        return True
+
+    diffs = _bucket_diffs(bucket)
+
+    if not diffs:
+        print(f"  = bucket '{bucket_id}': sudah ada, pengaturan sesuai")
+        return True
+
+    storage.update_bucket(
+        bucket_id,
+        name,
+        permissions=BUCKET_PERMISSIONS,
+        file_security=True,
+        enabled=True,
+        maximum_file_size=MAX_FILE_BYTES,
+        allowed_file_extensions=ALLOWED_EXTENSIONS,
+    )
+    print(f"  ~ bucket '{bucket_id}': pengaturan disamakan ({'; '.join(diffs)})")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------------------
 def build_client(endpoint: str, project_id: str, api_key: str):
     client = Client()
     client.set_endpoint(endpoint)
@@ -166,7 +321,8 @@ def build_client(endpoint: str, project_id: str, api_key: str):
 
 
 def setup(database_id: str, table_id: str, sources_id: str, results_id: str,
-          client) -> None:
+          client) -> str:
+    """Siapkan semua resource. Mengembalikan bucket hasil yang benar-benar dipakai."""
     tables = TablesDB(client)
     storage = Storage(client)
 
@@ -197,28 +353,33 @@ def setup(database_id: str, table_id: str, sources_id: str, results_id: str,
             ),
         )
 
-    # Tabel bisa saja sudah ada tanpa index (mis. dibuat manual). Pastikan.
+    # Table bisa saja sudah ada tanpa kolom/index lengkap (mis. dibuat manual).
+    _ensure_columns(tables, database_id, table_id)
     _ensure_indexes(tables, database_id, table_id)
 
     print("3) Bucket storage")
-    for bucket_id, name in ((sources_id, "Sources"), (results_id, "Results")):
-        if _exists(lambda bucket_id=bucket_id: storage.get_bucket(bucket_id)):
-            print(f"  = bucket '{bucket_id}': sudah ada, dilewati")
-        else:
-            _ensure(
-                f"bucket '{bucket_id}'",
-                lambda bucket_id=bucket_id, name=name: storage.create_bucket(
-                    bucket_id,
-                    name,
-                    permissions=BUCKET_PERMISSIONS,
-                    file_security=True,
-                    enabled=True,
-                    maximum_file_size=MAX_FILE_BYTES,
-                    allowed_file_extensions=ALLOWED_EXTENSIONS,
-                ),
-            )
+    if not _ensure_bucket(storage, sources_id, "Sources"):
+        raise RuntimeError(
+            f"Bucket '{sources_id}' tidak tersedia dan tidak bisa dibuat. "
+            "Kosongkan salah satu bucket di Appwrite Console lalu jalankan ulang."
+        )
+
+    if results_id == sources_id:
+        print(f"  = bucket '{results_id}': dipakai untuk sumber sekaligus hasil")
+        return results_id
+
+    if _ensure_bucket(storage, results_id, "Results"):
+        return results_id
+
+    print()
+    print(f"  -> hasil konversi akan disimpan di bucket '{sources_id}'")
+    print("     (satu bucket untuk sumber + hasil; path dan izin tetap terpisah per file)")
+    return sources_id
 
 
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Setup Appwrite untuk Konverter")
     parser.add_argument("--endpoint", default=os.environ.get("APPWRITE_ENDPOINT", DEFAULT_ENDPOINT))
@@ -231,11 +392,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--database-id", default=DEFAULT_DATABASE)
     parser.add_argument("--table-id", default=DEFAULT_TABLE)
     parser.add_argument("--sources-bucket", default=DEFAULT_SOURCES)
-    parser.add_argument("--results-bucket", default=DEFAULT_RESULTS)
+    parser.add_argument(
+        "--results-bucket",
+        default=DEFAULT_RESULTS,
+        help=(
+            "Bucket hasil. Pada plan Free (1 bucket) isi dengan nama bucket sumber, "
+            "mis. --results-bucket sources; script juga otomatis beralih bila kuota habis."
+        ),
+    )
     return parser.parse_args()
 
 
-def print_toml(args: argparse.Namespace) -> None:
+def print_toml(args: argparse.Namespace, results_bucket: str) -> None:
     print()
     print("Selesai. Tempel blok berikut ke Streamlit Secrets (.streamlit/secrets.toml):")
     print()
@@ -245,11 +413,18 @@ def print_toml(args: argparse.Namespace) -> None:
     print(f'database_id = "{args.database_id}"')
     print(f'jobs_table_id = "{args.table_id}"')
     print(f'sources_bucket_id = "{args.sources_bucket}"')
-    print(f'results_bucket_id = "{args.results_bucket}"')
+    print(f'results_bucket_id = "{results_bucket}"')
     print()
     print("[app]")
     print('backend = "appwrite"')
     print()
+
+    if results_bucket == args.sources_bucket:
+        print(
+            "Catatan: satu bucket dipakai untuk sumber dan hasil (batas plan Free). "
+            "File tetap terpisah lewat path <user_id>/<job_id>/<nama-file>."
+        )
+
     print("Catatan: hapus API key ini setelah setup selesai.")
 
 
@@ -271,11 +446,28 @@ def main() -> int:
     client = build_client(args.endpoint, args.project_id, args.api_key)
 
     try:
-        setup(args.database_id, args.table_id, args.sources_bucket, args.results_bucket, client)
-    except AppwriteException:
+        results_bucket = setup(
+            args.database_id, args.table_id, args.sources_bucket, args.results_bucket, client
+        )
+    except AppwriteException as exc:
+        print()
+        print(f"GAGAL: {_message(exc)}")
+        if _code(exc):
+            print(f"Kode  : {_code(exc)}")
+        error_type = getattr(exc, "type", None)
+        if error_type:
+            print(f"Tipe  : {error_type}")
+        if _code(exc) in (401, 403):
+            print()
+            print("Petunjuk: pastikan API key dibuat di project yang sama dengan --project-id,")
+            print("dan punya scope databases + storage. API key tidak bisa dipakai lintas project.")
+        return 1
+    except RuntimeError as exc:
+        print()
+        print(f"GAGAL: {exc}")
         return 1
 
-    print_toml(args)
+    print_toml(args, results_bucket)
     return 0
 
 
