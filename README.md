@@ -211,6 +211,50 @@ Alternatif Streamlit Cloud: isi **App settings → Secrets** dengan blok di atas
 
 > Fitur akun, riwayat, dan batas ukuran bertingkat hanya ada di **varian Streamlit**. UI Flask tanpa login internal — navbar-nya menampilkan tombol **Masuk** yang mengarah ke aplikasi Streamlit bila `KONVERTER_STREAMLIT_URL` diisi (batas tunggal `KONVERTER_MAX_UPLOAD_MB`).
 
+### Dua deployment (production + staging) dengan backend berbeda
+
+Konfigurasi yang didukung: dua app Streamlit terpisah, masing-masing dengan **Secrets sendiri**, sehingga production dan staging bisa memakai backend akun yang berbeda sekaligus (Supabase untuk production, Appwrite untuk staging).
+
+**App production** — branch `main`, URL `https://all-convert.streamlit.app` → **Supabase**
+- Secrets (Settings → Secrets):
+  ```toml
+  [supabase]
+  url = "https://<project-ref>.supabase.co"
+  anon_key = "<anon-public-key>"
+
+  [app]
+  backend = "supabase"
+  ```
+- Prasyarat: jalankan `supabase/schema.sql` di Supabase (tabel `jobs` + RLS + bucket `sources`/`results`).
+
+**App staging** — branch `staging`, URL `https://stagging-konverter.streamlit.app` → **Appwrite**
+- Siapkan Appwrite dulu:
+  ```powershell
+  $env:APPWRITE_API_KEY = "standard_xxxx"
+  python scripts/appwrite_setup.py --endpoint https://sgp.cloud.appwrite.io/v1 --project-id <PROJECT_ID>
+  ```
+  (hapus API key setelah setup; skrip idempotent)
+- Secrets (Settings → Secrets), **tanpa** blok `[supabase]`:
+  ```toml
+  [appwrite]
+  endpoint = "https://sgp.cloud.appwrite.io/v1"
+  project_id = "<project-id>"
+  database_id = "konverter"
+  jobs_table_id = "jobs"
+  sources_bucket_id = "sources"
+  results_bucket_id = "results"
+
+  [app]
+  backend = "appwrite"
+  ```
+
+Catatan:
+- Secrets Streamlit Cloud bersifat **per app**, bukan per repo — jadi keduanya tidak saling ganggu.
+- Set `backend` eksplisit (bukan `auto`) agar pilihan tidak bergeser kalau kredensial lain ikut tersimpan.
+- Akun, tabel `jobs`, dan bucket **terpisah** antar backend — akun staging tidak bisa login di production (ini yang diinginkan untuk staging).
+- Satu app hanya memakai **satu** backend aktif; tidak ada dual-write. Yang berjalan bersamaan adalah dua deployment dengan Secrets masing-masing.
+- Untuk pengujian lokal, file `.streamlit/secrets.toml` hanya memuat satu backend; ganti `[app] backend` untuk berpindah.
+
 ### Menjaga app tetap bangun (keep-alive)
 
 Streamlit menghitung aktivitas dari **sesi browser** (JavaScript + WebSocket), bukan HTTP GET. Ping biasa (UptimeRobot, `curl`) tetap menerima `200` walau app sedang tidur, jadi tidak berguna. Karena itu repositori menyertakan workflow `.github/workflows/keep-warm.yml` yang membuka app memakai Chromium headless (Playwright), mengklik tombol **"Yes, get this app back up!"** bila app tidur, lalu menahan sesi ±60 detik.
