@@ -67,7 +67,7 @@ jobs:
 
       - name: Kunjungi aplikasi staging
         env:
-          APP_URL: ${{ vars.STREAMLIT_STAGING_APP_URL || 'https://all-convert-staging.streamlit.app' }}
+          APP_URL: ${{ vars.STREAMLIT_STAGING_APP_URL || 'https://stagging-konverter.streamlit.app' }}
           HOLD_SECONDS: "60"
         run: node keep-warm.mjs
 
