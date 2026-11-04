@@ -379,8 +379,28 @@ def _go(page: str) -> None:
     st.rerun()
 
 
+def _brand_html() -> str:
+    """Markup merek (SVG + nama) untuk diletakkan di sisi kiri navbar."""
+    return (
+        '<div class="kv-brand">'
+        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" '
+        'stroke-width="1.5" stroke="currentColor" class="kv-brand-icon">'
+        '<path stroke-linecap="round" stroke-linejoin="round" '
+        'd="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>'
+        '</svg>'
+        '<span class="kv-brand-text">'
+        '<span class="kv-brand-name">Konverter</span>'
+        '<span class="kv-brand-sub">PDF &amp; CSV → Excel</span>'
+        '</span></div>'
+    )
+
+
 def _brand_row(user, back_label=None, show_login=True, show_history=True) -> None:
-    """Baris merek + kontrol akun, dirender di bagian atas kartu hero."""
+    """Navbar gradient gelap: brand kiri, tombol akun kanan (mirip Flask).
+
+    Memakai tombol Streamlit asli agar navigasi tetap berfungsi; Streamlit
+    membuang tag <script> dari st.markdown sehingga handler JS tidak bisa dipakai.
+    """
     configured = sb.is_configured()
     slots = []
 
@@ -396,42 +416,39 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
     elif not configured:
         slots.append("note")
 
-    columns = st.columns([3] + [1] * len(slots), vertical_alignment="center")
-
-    with columns[0]:
-        st.markdown(
-            '<div class="flex items-center gap-3">'
-            '<span class="grid size-[36px] place-items-center rounded-2xl kv-cta text-[1.05rem] '
-            'font-black text-white shadow-[0_12px_26px_rgba(27,73,216,0.3)]">K</span>'
-            '<span class="flex flex-col text-[1.05rem] font-black leading-[1.1] text-kv-ink">Konverter'
-            '<small class="text-[0.72rem] font-bold tracking-[0.02em] text-kv-muted">PDF &amp; CSV → Excel</small>'
-            "</span></div>",
-            unsafe_allow_html=True,
+    with st.container(key="kv-navbar"):
+        brand_col, *action_cols = st.columns(
+            [4] + [1] * len(slots), vertical_alignment="center", gap="small"
         )
 
-    for index, slot in enumerate(slots, start=1):
-        with columns[index]:
-            if slot == "back":
-                if st.button(back_label, key="kv-nav-back"):
-                    _go("home")
-            elif slot == "history":
-                if st.button("Riwayat", key="kv-nav-riwayat"):
-                    _go("history")
-            elif slot == "masuk":
-                if st.button("Masuk", key="kv-nav-masuk"):
-                    _go("auth")
-            elif slot == "keluar":
-                if st.button("Keluar", key="kv-nav-keluar"):
-                    sb.sign_out()
-                    _go("home")
-            else:
-                st.markdown('<span class="inline-block rounded-xl bg-kv-th px-3 py-2 text-[0.78rem] '
-                            'font-extrabold text-kv-subtle">Login belum aktif</span>', unsafe_allow_html=True)
+        with brand_col:
+            st.markdown(_brand_html(), unsafe_allow_html=True)
+
+        for slot, col in zip(slots, action_cols):
+            with col:
+                if slot == "back":
+                    if st.button(back_label, key="kv-nav-back", width="stretch"):
+                        _go("home")
+                elif slot == "history":
+                    if st.button("Riwayat", key="kv-nav-riwayat", width="stretch"):
+                        _go("history")
+                elif slot == "masuk":
+                    if st.button("Masuk", key="kv-nav-masuk", type="primary",
+                                 width="stretch"):
+                        _go("auth")
+                elif slot == "keluar":
+                    if st.button("Keluar", key="kv-nav-keluar", width="stretch"):
+                        sb.sign_out()
+                        _go("home")
+                else:
+                    st.markdown(
+                        '<span class="kv-nav-badge">Login belum aktif</span>',
+                        unsafe_allow_html=True,
+                    )
 
 
 def _page_home(user, limit_mb: int) -> None:
-    with st.container(key="kv-header"):
-        _brand_row(user)
+    _brand_row(user)
 
     with st.container(key="kv-hero"):
         st.markdown(_hero_html(), unsafe_allow_html=True)
@@ -458,8 +475,7 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
         "output_sig"
     ) == st.session_state.get("upload_sig") else (2 if st.session_state.get("converting") else 1)
 
-    with st.container(key="kv-header"):
-        _brand_row(user, back_label="← Kembali")
+    _brand_row(user, back_label="← Kembali")
 
     with st.container(key="kv-hero"):
         st.markdown(_hero_html(subtitle), unsafe_allow_html=True)
@@ -622,8 +638,7 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
 
 
 def _page_auth() -> None:
-    with st.container(key="kv-header"):
-        _brand_row(None, back_label="← Kembali", show_login=False)
+    _brand_row(None, back_label="← Kembali", show_login=False)
 
     with st.container(key="kv-hero"):
         st.markdown(
@@ -636,21 +651,6 @@ def _page_auth() -> None:
         )
 
         with st.container(key="kv-converter"):
-            provider_name = sb.provider_label() or "belum dikonfigurasi"
-            st.caption(f"Backend akun: {provider_name}")
-
-            with st.expander("Bermasalah saat masuk?"):
-                st.caption("Coba tes koneksi ke server akun, lalu ulangi. Konversi tetap bisa tanpa login.")
-                if st.button("Tes koneksi", key="kv-health"):
-                    result = sb.health()
-                    if result.get("ok"):
-                        st.success(f"Terhubung ke {result.get('host') or result.get('provider')}.")
-                    else:
-                        st.error(
-                            "Tidak dapat menghubungi server akun. "
-                            f"Detail: {result.get('detail') or '-'}"
-                        )
-
             tab_in, tab_up = st.tabs(["Masuk", "Daftar"])
 
             with tab_in:
@@ -720,8 +720,7 @@ def _auth_error(exc: Exception) -> str:
 
 
 def _page_history(user) -> None:
-    with st.container(key="kv-header"):
-        _brand_row(user, back_label="← Kembali ke alat", show_history=False)
+    _brand_row(user, back_label="← Kembali ke alat", show_history=False)
 
     with st.container(key="kv-hero"):
         st.markdown(

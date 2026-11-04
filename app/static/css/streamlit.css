@@ -120,30 +120,6 @@ div[data-baseweb="select"] > div {
     border-radius: 14px;
 }
 
-/* --- Tombol navigasi akun (lebih ringan dari tombol utama) --- */
-.st-key-kv-nav-back button,
-.st-key-kv-nav-riwayat button,
-.st-key-kv-nav-masuk button,
-.st-key-kv-nav-keluar button {
-    width: auto !important;
-    min-height: 42px !important;
-    padding: 0 16px !important;
-    border: 1px solid #d8e0ec !important;
-    border-radius: 12px !important;
-    background: #ffffff !important;
-    color: #16213e !important;
-    box-shadow: none !important;
-    font-weight: 800 !important;
-}
-
-/* Tombol akun rata kanan di baris header hero. */
-.st-key-kv-nav-masuk,
-.st-key-kv-nav-keluar,
-.st-key-kv-nav-riwayat {
-    display: flex;
-    justify-content: flex-end;
-}
-
 [data-testid="stLinkButton"] a {
     min-height: 44px;
     border-radius: 12px !important;
@@ -259,13 +235,125 @@ div[data-baseweb="select"] > div {
     outline-offset: 2px;
 }
 
+/* --- Navbar: gradient gelap, brand kiri, tombol kanan --- */
+.st-key-kv-navbar {
+    background: linear-gradient(135deg, #1b49d8 0%, #16213e 100%);
+    border-radius: 20px;
+    padding: 8px 18px !important;
+    margin-bottom: 20px;
+    box-shadow: 0 12px 30px rgba(22, 33, 62, 0.28);
+}
+
+.st-key-kv-navbar [data-testid="stHorizontalBlock"] {
+    align-items: center;
+    gap: 10px;
+}
+
+.kv-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.kv-brand-icon {
+    width: 22px;
+    height: 22px;
+    color: rgba(255, 255, 255, 0.9);
+    flex-shrink: 0;
+}
+
+.kv-brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+
+.kv-brand-name {
+    font-size: 1.05rem;
+    font-weight: 900;
+    color: #ffffff;
+}
+
+.kv-brand-sub {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.kv-nav-badge {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.6);
+    border-radius: 10px;
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+/* Tombol navbar: ringan, bukan tombol utama raksasa. */
+.st-key-kv-navbar [data-testid="stButton"] button {
+    width: 100%;
+    min-height: 40px !important;
+    padding: 6px 16px !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    border: 1px solid rgba(255, 255, 255, 0.35) !important;
+    color: rgba(255, 255, 255, 0.92) !important;
+    font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    box-shadow: none !important;
+}
+
+.st-key-kv-navbar [data-testid="stButton"] button:hover {
+    background: rgba(255, 255, 255, 0.15) !important;
+    color: #ffffff !important;
+    transform: none;
+}
+
+/* Tombol Masuk: putih solid, seperti di navbar Flask. */
+.st-key-kv-navbar [data-testid="stButton"] button[kind="primary"] {
+    background: #ffffff !important;
+    color: #16213e !important;
+    border-color: #ffffff !important;
+}
+
+.st-key-kv-navbar [data-testid="stButton"] button[kind="primary"]:hover {
+    background: #e8efff !important;
+    color: #1b49d8 !important;
+}
+
+/* Streamlit netralkan gaya asli pada elemen markdown di dalam navbar. */
+.st-key-kv-navbar [data-testid="stMarkdownContainer"] {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.st-key-kv-navbar [data-testid="stMarkdownContainer"] p {
+    margin: 0 !important;
+}
+
 @media (max-width: 780px) {
-    .st-key-kv-header {
-        padding: 8px 14px;
+    .st-key-kv-navbar {
+        padding: 8px 12px !important;
+        border-radius: 16px;
     }
 
-    .st-key-kv-tool-pdf,
-    .st-key-kv-tool-csv {
-        margin-bottom: 12px;
+    .kv-brand-name {
+        font-size: 0.95rem;
+    }
+
+    .kv-brand-sub {
+        display: none;
+    }
+
+    .st-key-kv-navbar [data-testid="stButton"] button {
+        min-height: 34px !important;
+        padding: 4px 10px !important;
+        font-size: 0.78rem !important;
     }
 }
+
+
