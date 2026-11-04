@@ -221,6 +221,13 @@ Streamlit menghitung aktivitas dari **sesi browser** (JavaScript + WebSocket), b
 2. Jalankan manual sekali dari tab **Actions → Keep Streamlit Awake → Run workflow**.
 3. Setelah itu workflow berjalan otomatis tiap 3 jam.
 
+Untuk **staging** (app Streamlit yang di-deploy dari branch `staging`), gunakan workflow `.github/workflows/keep-warm-staging.yml`:
+1. Set variabel terpisah di **Settings → Secrets and variables → Actions → Variables**:
+   - Name: `STREAMLIT_STAGING_APP_URL`
+   - Value: `https://<subdomain>-staging.streamlit.app`
+2. Jalankan manual dari tab **Actions → Keep Streamlit Staging Awake → Run workflow**.
+3. Workflow ini juga berjalan otomatis tiap 3 jam **setelah file-nya ada di branch default (`main`)**; dari branch `staging`, jadwal belum aktif sehingga perlu dijalankan manual.
+
 Catatan:
 - Workflow harus ada di branch default (`main`) agar jadwalnya aktif.
 - Repo publik memakai menit GitHub Actions gratis; repo privat memakai kuota 2.000 menit/bulan (≈960 menit di sini).
