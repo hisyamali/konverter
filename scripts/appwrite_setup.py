@@ -1,33 +1,3 @@
-"""Siapkan database, table, dan bucket Appwrite untuk aplikasi Konverter.
-
-Jalankan dari root repo. Butuh API key Appwrite dengan scope database
-(database/table/column/index) dan storage (bucket). API key hanya dipakai saat
-setup -- jangan simpan di Streamlit Secrets dan hapus setelah selesai.
-
-Contoh (Windows PowerShell):
-
-    $env:APPWRITE_API_KEY = "standard_xxxx"
-    python scripts/appwrite_setup.py --endpoint https://sgp.cloud.appwrite.io/v1 --project-id <PROJECT_ID>
-
-Script ini **idempotent**: tiap objek diperiksa lebih dulu lewat API *get*,
-lalu dibuat bila belum ada atau diperbaiki bila sudah ada. Yang diperiksa:
-
-- database ``konverter``
-- table ``jobs`` beserta seluruh kolom dan index ``user_created``
-- bucket ``sources`` (dan ``results`` bila plan mengizinkan)
-
-**Plan Free Appwrite hanya mengizinkan 1 bucket.** Bila pembuatan bucket
-``results`` ditolak karena kuota, script tidak berhenti: hasil konversi
-otomatis diarahkan ke bucket ``sources`` (satu bucket untuk sumber + hasil)
-dan blok TOML yang dicetak sudah memakai ``results_bucket_id = "sources"``.
-Pemisahan tetap aman karena path file memakai ``<user_id>/<job_id>/<nama>``
-dan izin diberikan per file oleh aplikasi.
-
-Perbedaan penting dari versi lama: error kuota plan **tidak lagi** dilaporkan
-sebagai "sudah ada", dan bila setup gagal script mencetak pesan error Appwrite
-yang sebenarnya (bukan diam-diam berhenti).
-"""
-
 import argparse
 import os
 import sys
@@ -94,86 +64,73 @@ TABLE_PERMISSIONS = [Permission.create(Role.users())]
 BUCKET_PERMISSIONS = [Permission.create(Role.users())]
 
 
-def _message(exc: Exception) -> str:
-    """Teks pesan error Appwrite (fallback ke str)."""
-    return str(getattr(exc, "message", None) or exc or "")
+def _message(error: Exception) -> str:
+    return str(getattr(error, "message", None) or error or "")
 
 
-def _code(exc: Exception) -> int:
-    """Kode HTTP error Appwrite (0 bila tidak ada)."""
-    return int(getattr(exc, "code", 0) or 0)
+def _code(error: Exception) -> int:
+    return int(getattr(error, "code", 0) or 0)
 
 
-def _conflict(exc: Exception) -> bool:
-    """True bila error berarti objek sudah ada."""
-    if _code(exc) == 409:
+def _conflict(error: Exception) -> bool:
+    if _code(error) == 409:
         return True
 
-    low = _message(exc).lower()
-    return "already exists" in low or "already been created" in low
+    lower_text = _message(error).lower()
+    return "already exists" in lower_text or "already been created" in lower_text
 
 
-def _quota_error(exc: Exception) -> bool:
-    """True bila error karena kuota plan (bukan karena objek sudah ada)."""
-    low = _message(exc).lower()
-    return any(marker in low for marker in QUOTA_MARKERS)
+def _quota_error(error: Exception) -> bool:
+    lower_text = _message(error).lower()
+    return any(marker in lower_text for marker in QUOTA_MARKERS)
 
 
 def _exists(getter) -> bool:
-    """True bila objek sudah ada.
-
-    ``getter`` memanggil endpoint *get*. Appwrite mengembalikan HTTP 404 bila
-    belum ada. Error lain (401, 403, jaringan) sengaja diteruskan supaya
-    terlihat oleh pemanggil -- bukan disamarkan sebagai "sudah ada".
-    """
     try:
         getter()
         return True
-    except AppwriteException as exc:
-        if _code(exc) == 404:
+    except AppwriteException as error:
+        if _code(error) == 404:
             return False
         raise
 
 
 def _ensure(action: str, callback):
-    """Jalankan pembuatan objek; lewati bila ternyata sudah ada."""
     try:
         result = callback()
         print(f"  + {action}: dibuat")
         return result
-    except AppwriteException as exc:
-        if _conflict(exc):
+    except AppwriteException as error:
+        if _conflict(error):
             print(f"  = {action}: sudah ada, dilewati")
             return None
-        print(f"  ! {action}: gagal -> {_message(exc)}")
+        print(f"  ! {action}: gagal -> {_message(error)}")
         raise
 
 
 def _create_column(tables: TablesDB, database_id: str, table_id: str, column: dict):
-    """Buat satu kolom sesuai tipe di ``COLUMNS``."""
     key = column["key"]
     required = bool(column.get("required", False))
     default = column.get("default")
-    kind = column["type"]
+    column_type = column["type"]
 
-    if kind == "varchar":
+    if column_type == "varchar":
         return tables.create_varchar_column(
             database_id, table_id, key, float(column.get("size", 255)), required, default=default
         )
-    if kind == "bigint":
+    if column_type == "bigint":
         return tables.create_big_int_column(database_id, table_id, key, required, default=default)
-    if kind == "integer":
+    if column_type == "integer":
         return tables.create_integer_column(database_id, table_id, key, required, default=default)
-    if kind == "text":
+    if column_type == "text":
         return tables.create_text_column(database_id, table_id, key, required, default=default)
-    if kind == "datetime":
+    if column_type == "datetime":
         return tables.create_datetime_column(database_id, table_id, key, required, default=default)
 
-    raise RuntimeError(f"Tipe kolom '{kind}' belum didukung skrip (kolom '{key}').")
+    raise RuntimeError(f"Tipe kolom '{column_type}' belum didukung skrip (kolom '{key}').")
 
 
 def _ensure_columns(tables: TablesDB, database_id: str, table_id: str) -> None:
-    """Pastikan semua kolom di ``COLUMNS`` ada (tambahkan yang belum ada)."""
     result = tables.list_columns(database_id, table_id, queries=[Query.limit(100)])
     existing = {getattr(column, "key", None) for column in result.columns}
 
@@ -188,11 +145,6 @@ def _ensure_columns(tables: TablesDB, database_id: str, table_id: str) -> None:
 
 
 def _ensure_indexes(tables: TablesDB, database_id: str, table_id: str) -> None:
-    """Pastikan semua index ada.
-
-    Dipisah dari ``create_table`` agar tabel yang sudah ada tanpa index
-    (mis. dibuat manual, atau ``create_table`` sempat gagal) tetap diperbaiki.
-    """
     for index in INDEXES:
         key = index["key"]
         if _exists(lambda key=key: tables.get_index(database_id, table_id, key)):
@@ -214,7 +166,6 @@ def _ensure_indexes(tables: TablesDB, database_id: str, table_id: str) -> None:
 
 
 def _bucket_diffs(bucket) -> list:
-    """Daftar pengaturan bucket yang tidak sesuai kebutuhan aplikasi."""
     diffs = []
 
     if getattr(bucket, "filesecurity", False) is not True:
@@ -232,16 +183,11 @@ def _bucket_diffs(bucket) -> list:
 
 
 def _ensure_bucket(storage: Storage, bucket_id: str, name: str) -> bool:
-    """Buat bucket atau samakan pengaturannya.
-
-    Mengembalikan ``False`` bila bucket tidak bisa dibuat karena kuota plan
-    (bukan melempar exception), supaya pemanggil bisa beralih ke satu bucket.
-    """
     try:
         bucket = storage.get_bucket(bucket_id)
-    except AppwriteException as exc:
-        if _code(exc) != 404:
-            print(f"  ! bucket '{bucket_id}': gagal diperiksa -> {_message(exc)}")
+    except AppwriteException as error:
+        if _code(error) != 404:
+            print(f"  ! bucket '{bucket_id}': gagal diperiksa -> {_message(error)}")
             raise
         bucket = None
 
@@ -256,15 +202,15 @@ def _ensure_bucket(storage: Storage, bucket_id: str, name: str) -> bool:
                 maximum_file_size=MAX_FILE_BYTES,
                 allowed_file_extensions=ALLOWED_EXTENSIONS,
             )
-        except AppwriteException as exc:
-            if _conflict(exc):
+        except AppwriteException as error:
+            if _conflict(error):
                 print(f"  = bucket '{bucket_id}': sudah ada, dilewati")
                 return True
-            if _quota_error(exc):
+            if _quota_error(error):
                 print(f"  ! bucket '{bucket_id}': tidak bisa dibuat -- kuota plan habis")
-                print(f"    {_message(exc)}")
+                print(f"    {_message(error)}")
                 return False
-            print(f"  ! bucket '{bucket_id}': gagal -> {_message(exc)}")
+            print(f"  ! bucket '{bucket_id}': gagal -> {_message(error)}")
             raise
 
         print(f"  + bucket '{bucket_id}': dibuat")
@@ -299,7 +245,6 @@ def build_client(endpoint: str, project_id: str, api_key: str):
 
 def setup(database_id: str, table_id: str, sources_id: str, results_id: str,
           client) -> str:
-    """Siapkan semua resource. Mengembalikan bucket hasil yang benar-benar dipakai."""
     tables = TablesDB(client)
     storage = Storage(client)
 
@@ -422,22 +367,22 @@ def main() -> int:
         results_bucket = setup(
             args.database_id, args.table_id, args.sources_bucket, args.results_bucket, client
         )
-    except AppwriteException as exc:
+    except AppwriteException as error:
         print()
-        print(f"GAGAL: {_message(exc)}")
-        if _code(exc):
-            print(f"Kode  : {_code(exc)}")
-        error_type = getattr(exc, "type", None)
+        print(f"GAGAL: {_message(error)}")
+        if _code(error):
+            print(f"Kode  : {_code(error)}")
+        error_type = getattr(error, "type", None)
         if error_type:
             print(f"Tipe  : {error_type}")
-        if _code(exc) in (401, 403):
+        if _code(error) in (401, 403):
             print()
             print("Petunjuk: pastikan API key dibuat di project yang sama dengan --project-id,")
             print("dan punya scope databases + storage. API key tidak bisa dipakai lintas project.")
         return 1
-    except RuntimeError as exc:
+    except RuntimeError as error:
         print()
-        print(f"GAGAL: {exc}")
+        print(f"GAGAL: {error}")
         return 1
 
     print_toml(args, results_bucket)

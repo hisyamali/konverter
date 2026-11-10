@@ -1,23 +1,3 @@
-"""Integrasi Appwrite untuk varian Streamlit: Auth, tabel ``jobs``, dan Storage.
-
-Modul ini adalah backend **alternatif** di samping ``supabase_store``. Antarmuka
-fungsinya sengaja dibuat identik dengan ``supabase_store`` supaya UI cukup
-memanggil ``app.services.store`` dan tidak perlu tahu backend mana yang aktif.
-
-Tiga bagian:
-
-1. **Auth** opsional (email + password) lewat Appwrite Account.
-2. **Riwayat**: baris pekerjaan di table ``jobs`` (Appwrite TablesDB).
-3. **Penyimpanan privat**: file sumber & hasil ``.xlsx`` di bucket ``sources`` /
-   ``results``; izin per file hanya untuk pemiliknya (``Role.user``). Pada plan
-   Free Appwrite (1 bucket) keduanya memakai ``sources``.
-
-Berbeda dari Supabase, klien Appwrite adalah *server SDK*: satu klien per sesi
-Streamlit dan **tidak pernah** dibagikan antar pengguna. Semua operasi defensif
--- bila Appwrite belum dikonfigurasi atau gagal jaringan, aplikasi tetap jalan
-sebagai tamu.
-"""
-
 import hashlib
 import os
 import re
@@ -25,9 +5,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 try:
-    import streamlit as st
+    import streamlit
 except ImportError:
-    st = None
+    streamlit = None
 
 try:
     from appwrite.client import Client
@@ -63,20 +43,18 @@ _REQUIRED_MESSAGE = "Appwrite belum dikonfigurasi."
 
 
 def _secrets_section() -> dict:
-    """Baca blok ``[appwrite]`` dari ``st.secrets`` tanpa gagal bila belum ada."""
-    if st is None:
+    if streamlit is None:
         return {}
 
     try:
-        section = st.secrets.get("appwrite")
+        section = streamlit.secrets.get("appwrite")
     except Exception:
         return {}
 
     return dict(section) if section else {}
 
 
-def _pick(secret_value, env_name: str, default: str = "") -> str:
-    """Ambil dari secrets; bila kosong/placeholder, jatuh ke env var lalu default."""
+def _pick_secret_value(secret_value, env_name: str, default: str = "") -> str:
     value = secret_value.strip() if isinstance(secret_value, str) else ""
 
     if value and "<" not in value:
@@ -86,20 +64,18 @@ def _pick(secret_value, env_name: str, default: str = "") -> str:
 
 
 def _config() -> dict:
-    """Gabungkan konfigurasi dari ``st.secrets`` (diutamakan) dan env var."""
     secrets = _secrets_section()
     return {
-        "endpoint": _pick(secrets.get("endpoint"), "APPWRITE_ENDPOINT", "https://cloud.appwrite.io/v1"),
-        "project_id": _pick(secrets.get("project_id"), "APPWRITE_PROJECT_ID"),
-        "database_id": _pick(secrets.get("database_id"), "APPWRITE_DATABASE_ID", "konverter"),
-        "jobs_table_id": _pick(secrets.get("jobs_table_id"), "APPWRITE_JOBS_TABLE_ID", "jobs"),
-        "sources_bucket_id": _pick(secrets.get("sources_bucket_id"), "APPWRITE_SOURCES_BUCKET_ID", "sources"),
-        "results_bucket_id": _pick(secrets.get("results_bucket_id"), "APPWRITE_RESULTS_BUCKET_ID", "sources"),
+        "endpoint": _pick_secret_value(secrets.get("endpoint"), "APPWRITE_ENDPOINT", "https://cloud.appwrite.io/v1"),
+        "project_id": _pick_secret_value(secrets.get("project_id"), "APPWRITE_PROJECT_ID"),
+        "database_id": _pick_secret_value(secrets.get("database_id"), "APPWRITE_DATABASE_ID", "konverter"),
+        "jobs_table_id": _pick_secret_value(secrets.get("jobs_table_id"), "APPWRITE_JOBS_TABLE_ID", "jobs"),
+        "sources_bucket_id": _pick_secret_value(secrets.get("sources_bucket_id"), "APPWRITE_SOURCES_BUCKET_ID", "sources"),
+        "results_bucket_id": _pick_secret_value(secrets.get("results_bucket_id"), "APPWRITE_RESULTS_BUCKET_ID", "sources"),
     }
 
 
 def is_configured() -> bool:
-    """True bila SDK dan project id Appwrite tersedia (bukan placeholder)."""
     if Client is None:
         return False
 
@@ -108,11 +84,10 @@ def is_configured() -> bool:
 
 
 def get_client() -> Optional["Client"]:
-    """Klien Appwrite **per sesi** Streamlit (tidak dibagikan antar pengguna)."""
-    if not is_configured() or st is None:
+    if not is_configured() or streamlit is None:
         return None
 
-    client = st.session_state.get(_CLIENT_KEY)
+    client = streamlit.session_state.get(_CLIENT_KEY)
 
     if client is None:
         config = _config()
@@ -123,7 +98,7 @@ def get_client() -> Optional["Client"]:
         except Exception:
             return None
 
-        st.session_state[_CLIENT_KEY] = client
+        streamlit.session_state[_CLIENT_KEY] = client
         _restore_session(client)
 
     return client
@@ -148,8 +123,7 @@ def _session_secret(session) -> Optional[str]:
 
 
 def _restore_session(client) -> None:
-    """Terapkan kembali sesi dari session_state (bertahan antar rerun)."""
-    session = st.session_state.get(_SESSION_KEY)
+    session = streamlit.session_state.get(_SESSION_KEY)
 
     if not session:
         return
@@ -157,36 +131,33 @@ def _restore_session(client) -> None:
     try:
         client.set_session(session["secret"])
     except Exception:
-        st.session_state.pop(_SESSION_KEY, None)
-        st.session_state.pop(_USER_KEY, None)
+        streamlit.session_state.pop(_SESSION_KEY, None)
+        streamlit.session_state.pop(_USER_KEY, None)
 
 
 def _remember_user(user, session=None) -> dict:
-    """Simpan ringkasan pengguna + sesi di session_state."""
-    info = {
+    user_info = {
         "id": getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else "") or "",
         "email": getattr(user, "email", None) or (user.get("email") if isinstance(user, dict) else "") or "",
     }
-    st.session_state[_USER_KEY] = info
+    streamlit.session_state[_USER_KEY] = user_info
 
     secret = _session_secret(session)
 
     if secret:
-        st.session_state[_SESSION_KEY] = {"secret": secret, "user_id": info["id"]}
+        streamlit.session_state[_SESSION_KEY] = {"secret": secret, "user_id": user_info["id"]}
 
-    return info
+    return user_info
 
 
 def current_user() -> Optional[dict]:
-    """Ringkasan pengguna yang login, atau None untuk mode tamu."""
-    if st is None:
+    if streamlit is None:
         return None
 
-    return st.session_state.get(_USER_KEY)
+    return streamlit.session_state.get(_USER_KEY)
 
 
 def sign_up(email: str, password: str) -> dict:
-    """Daftarkan akun baru lalu langsung buat sesi (Appwrite tidak wajib verifikasi)."""
     client = _require_client()
     account = Account(client)
     name = (email.split("@")[0] or "pengguna")[:120]
@@ -200,7 +171,6 @@ def sign_up(email: str, password: str) -> dict:
 
 
 def sign_in(email: str, password: str) -> dict:
-    """Masuk dengan email + password."""
     client = _require_client()
     account = Account(client)
 
@@ -212,11 +182,10 @@ def sign_in(email: str, password: str) -> dict:
 
 
 def sign_out() -> None:
-    """Hapus sesi Appwrite aktif lalu bersihkan session_state."""
-    if st is None:
+    if streamlit is None:
         return
 
-    client = st.session_state.get(_CLIENT_KEY)
+    client = streamlit.session_state.get(_CLIENT_KEY)
 
     if client is not None:
         try:
@@ -224,29 +193,21 @@ def sign_out() -> None:
         except Exception:
             pass
 
-    for key in (_CLIENT_KEY, _SESSION_KEY, _USER_KEY):
-        st.session_state.pop(key, None)
+    for session_key in (_CLIENT_KEY, _SESSION_KEY, _USER_KEY):
+        streamlit.session_state.pop(session_key, None)
 
 
 def _safe_name(name: str) -> str:
-    """Bersihkan nama file agar aman dipakai sebagai objek storage."""
-    base = os.path.basename(name or "file")
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._") or "file"
-    return cleaned[:120]
+    base_name = os.path.basename(name or "file")
+    cleaned_name = re.sub(r"[^A-Za-z0-9._-]+", "_", base_name).strip("._") or "file"
+    return cleaned_name[:120]
 
 
 def object_path(user_id: str, job_id: str, filename: str) -> str:
-    """Konvensi referensi: ``<user_id>/<job_id>/<nama-file>`` (sama seperti Supabase)."""
     return f"{user_id}/{job_id}/{_safe_name(filename)}"
 
 
 def _file_id(path: str) -> str:
-    """Turunkan file id Appwrite yang deterministik dari referensi path.
-
-    File id Appwrite tidak boleh mengandung ``/``, sedangkan referensi kita
-    memakai bentuk ``user/job/file``. Hash 32 karakter hex selalu valid dan
-    stabil, sehingga hapus/unduh tidak perlu kolom tambahan.
-    """
     return hashlib.sha256((path or "").encode("utf-8")).hexdigest()[:32]
 
 
@@ -256,22 +217,20 @@ def _bucket_id(bucket: str) -> str:
 
 
 def _owner_permissions():
-    """Izin baca/ubah/hapus hanya untuk pemilik (None bila belum login)."""
     user = current_user() or {}
-    uid = user.get("id")
+    user_id = user.get("id")
 
-    if not uid or Permission is None:
+    if not user_id or Permission is None:
         return None
 
     return [
-        Permission.read(Role.user(uid)),
-        Permission.update(Role.user(uid)),
-        Permission.delete(Role.user(uid)),
+        Permission.read(Role.user(user_id)),
+        Permission.update(Role.user(user_id)),
+        Permission.delete(Role.user(user_id)),
     ]
 
 
 def upload_file(bucket: str, path: str, data: bytes, content_type: str) -> None:
-    """Unggah byte ke bucket; timpa bila file id sudah ada."""
     client = _require_client()
     storage = Storage(client)
     bucket_id = _bucket_id(bucket)
@@ -289,8 +248,8 @@ def upload_file(bucket: str, path: str, data: bytes, content_type: str) -> None:
 
     try:
         _create()
-    except AppwriteException as exc:
-        if getattr(exc, "code", 0) == 409:
+    except AppwriteException as error:
+        if getattr(error, "code", 0) == 409:
             try:
                 storage.delete_file(bucket_id, file_id)
             except Exception:
@@ -301,12 +260,10 @@ def upload_file(bucket: str, path: str, data: bytes, content_type: str) -> None:
 
 
 def signed_url(bucket: str, path: str, expires: int = 3600) -> Optional[str]:
-    """Appwrite tidak memakai signed URL di SDK ini -- unduhan diambil via server."""
     return None
 
 
 def download_bytes(bucket: str, path: str) -> Optional[bytes]:
-    """Ambil isi file (dipakai riwayat untuk backend tanpa signed URL)."""
     client = get_client()
 
     if client is None:
@@ -319,7 +276,6 @@ def download_bytes(bucket: str, path: str) -> Optional[bytes]:
 
 
 def remove_objects(bucket: str, paths) -> None:
-    """Hapus objek dari bucket (abaikan bila gagal)."""
     client = get_client()
     paths = [path for path in (paths or []) if path]
 
@@ -347,34 +303,32 @@ def _table():
 
 
 def _row_to_job(row) -> dict:
-    """Petakan Row Appwrite ke bentuk baris ``jobs`` yang dipakai UI."""
     data = getattr(row, "data", None) or {}
-    job = dict(data)
+    job_record = dict(data)
 
     row_id = getattr(row, "id", None)
     if row_id:
-        job["id"] = row_id
+        job_record["id"] = row_id
 
     created = getattr(row, "createdat", None)
-    if created and not job.get("created_at"):
-        job["created_at"] = created
+    if created and not job_record.get("created_at"):
+        job_record["created_at"] = created
 
     updated = getattr(row, "updatedat", None)
     if updated:
-        job["updated_at"] = updated
+        job_record["updated_at"] = updated
 
-    return job
+    return job_record
 
 
 def create_job(user_id: str, conversion_type: str, original_name: str, source_size: int,
                source_path: Optional[str]) -> Optional[str]:
-    """Sisipkan baris pekerjaan berstatus ``processing``; kembalikan id-nya."""
     table, database_id, table_id = _table()
 
     if table is None:
         return None
 
-    payload = {
+    row_payload = {
         "user_id": user_id,
         "conversion_type": conversion_type,
         "original_name": original_name,
@@ -383,10 +337,10 @@ def create_job(user_id: str, conversion_type: str, original_name: str, source_si
         "status": "processing",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    payload = {key: value for key, value in payload.items() if value is not None}
+    row_payload = {session_key: value for session_key, value in row_payload.items() if value is not None}
 
     try:
-        row = table.create_row(database_id, table_id, ID.unique(), payload,
+        row = table.create_row(database_id, table_id, ID.unique(), row_payload,
                                permissions=_owner_permissions())
     except Exception:
         return None
@@ -395,23 +349,21 @@ def create_job(user_id: str, conversion_type: str, original_name: str, source_si
 
 
 def finish_job(job_id: Optional[str], status: str, **fields) -> None:
-    """Perbarui status + metadata pekerjaan (``completed`` / ``failed``)."""
     table, database_id, table_id = _table()
 
     if table is None or not job_id:
         return
 
-    payload = dict(fields)
-    payload["status"] = status
+    row_payload = dict(fields)
+    row_payload["status"] = status
 
     try:
-        table.update_row(database_id, table_id, job_id, payload)
+        table.update_row(database_id, table_id, job_id, row_payload)
     except Exception:
         pass
 
 
 def list_jobs(user_id: str, limit: int = 50) -> list:
-    """Ambil riwayat pekerjaan terbaru milik pengguna."""
     table, database_id, table_id = _table()
 
     if table is None:
@@ -430,24 +382,23 @@ def list_jobs(user_id: str, limit: int = 50) -> list:
     except Exception:
         return []
 
-    rows = getattr(response, "rows", None) or []
-    return [_row_to_job(row) for row in rows]
+    row_list = getattr(response, "rows", None) or []
+    return [_row_to_job(row) for row in row_list]
 
 
-def delete_job(user_id: str, job: dict) -> None:
-    """Hapus berkas sumber/hasil lalu baris pekerjaan milik pengguna."""
-    if job.get("source_path"):
-        remove_objects(SOURCE_BUCKET, [job["source_path"]])
+def delete_job(user_id: str, job_record: dict) -> None:
+    if job_record.get("source_path"):
+        remove_objects(SOURCE_BUCKET, [job_record["source_path"]])
 
-    if job.get("result_path"):
-        remove_objects(RESULT_BUCKET, [job["result_path"]])
+    if job_record.get("result_path"):
+        remove_objects(RESULT_BUCKET, [job_record["result_path"]])
 
     table, database_id, table_id = _table()
 
-    if table is None or not job.get("id"):
+    if table is None or not job_record.get("id"):
         return
 
     try:
-        table.delete_row(database_id, table_id, job["id"])
+        table.delete_row(database_id, table_id, job_record["id"])
     except Exception:
         pass

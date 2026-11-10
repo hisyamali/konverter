@@ -1,5 +1,3 @@
-"""Membuat dan mengonfigurasi instance Flask utama aplikasi konverter."""
-
 import os
 from pathlib import Path
 from pandas import DataFrame
@@ -7,11 +5,10 @@ from flask import Flask
 
 from app.logging import configure_logging
 from app.middleware.request_context import register_request_logging
-from app.routes import main_bp, logs_bp
+from app.routes import main_blueprint, logs_blueprint
 
 
 def create_app():
-    """Siapkan konfigurasi upload/output, folder storage, logging, dan blueprint route."""
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-this-secret-key")
     app.config["STREAMLIT_URL"] = os.environ.get("KONVERTER_STREAMLIT_URL", "").strip()
@@ -30,7 +27,7 @@ def create_app():
     configure_logging(app)
     register_request_logging(app)
 
-    app.register_blueprint(main_bp)
-    app.register_blueprint(logs_bp)
+    app.register_blueprint(main_blueprint)
+    app.register_blueprint(logs_blueprint)
 
     return app

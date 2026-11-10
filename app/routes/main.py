@@ -1,5 +1,3 @@
-"""Route HTTP untuk halaman utama, pratinjau file, konversi, dan polling progress."""
-
 import io
 import time
 from pathlib import Path
@@ -8,24 +6,24 @@ from uuid import uuid4
 from flask import Blueprint, current_app, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
-from app.services.concurrency import QueueTimeout, conversion_slot
-from app.services.converter import (
+from flask_app.services.concurrency import QueueTimeout, conversion_slot
+from flask_app.services.converter import (
     convert_csv_to_excel,
     convert_pdf_to_excel,
     preview_csv_file,
     preview_pdf_file,
 )
-from app.services.eta import ProgressReporter
-from app.services.previews import (
+from flask_app.services.eta import ProgressReporter
+from flask_app.services.previews import (
     delete_preview,
     get_preview,
     register_preview,
     sweep_old_files,
 )
-from app.services.progress import create_job, finish_job, get_job, update_job
+from flask_app.services.progress import create_job, finish_job, get_job, update_job
 
 
-main_bp = Blueprint("main", __name__)
+main_blueprint = Blueprint("main", __name__)
 ALLOWED_EXTENSIONS = {"csv", "pdf"}
 EXCEL_MIMETYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -53,13 +51,13 @@ def _log_conversion_start(job_id, preview_id, conversion_type, filename, pages):
     })
 
 
-def _log_conversion_finished(job_id, preview_id, duration_ms, rows, output_size):
+def _log_conversion_finished(job_id, preview_id, duration_ms, row_count, output_size):
     current_app.logger.info("Conversion finished", extra={
         "context": {
             "job_id": job_id,
             "preview_id": preview_id,
             "duration_ms": duration_ms,
-            "rows": rows,
+            "rows": row_count,
             "output_size_bytes": output_size,
         }
     })
@@ -77,7 +75,6 @@ def _log_conversion_error(job_id, preview_id, error, error_type):
 
 
 def _log_rejection(message, job_id=None, preview_id=None, level="WARNING"):
-    """Catat penolakan request (validasi upload/pratinjau/konversi) ke log."""
     context = {"reason": message}
     if job_id:
         context["job_id"] = job_id
@@ -91,7 +88,6 @@ def _log_rejection(message, job_id=None, preview_id=None, level="WARNING"):
 
 
 def _log_preview_error(error, filename, conversion_type):
-    """Catat kegagalan pembacaan file saat pratinjau."""
     context = {
         "error": str(error),
         "error_type": type(error).__name__,
@@ -105,32 +101,29 @@ def _log_preview_error(error, filename, conversion_type):
         current_app.logger.error("Preview failed", extra={"context": context}, exc_info=True)
 
 
-main_bp = Blueprint("main", __name__)
+main_blueprint = Blueprint("main", __name__)
 ALLOWED_EXTENSIONS = {"csv", "pdf"}
 EXCEL_MIMETYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-@main_bp.get("/")
+@main_blueprint.get("/")
 def index():
-    """Tampilkan halaman utama konverter."""
     return render_template("index.html")
 
 
-@main_bp.get("/progress")
+@main_blueprint.get("/progress")
 def progress_status():
-    """Kirim status progress konversi agar frontend bisa memperbarui progress bar."""
     job_id = request.args.get("job_id", "").strip()
-    job = get_job(job_id)
+    job_status = get_job(job_id)
 
-    if job is None:
+    if job_status is None:
         return jsonify({"percent": 0, "message": "Menyiapkan file", "done": False, "error": None, "eta_seconds": None, "elapsed_seconds": 0})
 
-    return jsonify(job)
+    return jsonify(job_status)
 
 
-@main_bp.post("/preview")
+@main_blueprint.post("/preview")
 def preview():
-    """Validasi upload, simpan sementara, lalu kirim data pratinjau ke frontend."""
     conversion_type = request.form.get("conversion_type", "").strip()
     uploaded_file = request.files.get("file")
 
@@ -188,9 +181,8 @@ def preview():
     )
 
 
-@main_bp.post("/convert")
+@main_blueprint.post("/convert")
 def convert():
-    """Konversi file yang sudah dipratinjau menjadi Excel dan kirim hasil download."""
     job_id = request.form.get("job_id", "").strip() or uuid4().hex
     preview_id = request.form.get("preview_id", "").strip()
 
@@ -211,9 +203,9 @@ def convert():
     output_path = current_app.config["OUTPUT_FOLDER"] / output_name
 
     create_job(job_id, "Menerima file")
-    progress = _build_progress(job_id)
+    progress_reporter = _build_progress(job_id)
 
-    rows = 0
+    row_count = 0
     output_size = 0
 
     def on_wait(waited, position):
@@ -225,15 +217,15 @@ def convert():
             _log_conversion_start(job_id, preview_id, conversion_type, original_name, page_count)
 
             if conversion_type == "csv-to-excel":
-                convert_csv_to_excel(input_path, output_path, progress)
+                convert_csv_to_excel(input_path, output_path, progress_reporter)
             else:
-                convert_pdf_to_excel(input_path, output_path, progress, total_pages=page_count)
+                convert_pdf_to_excel(input_path, output_path, progress_reporter, total_pages=page_count)
 
             if output_path.exists():
                 output_size = output_path.stat().st_size
 
             duration_ms = int((time.perf_counter() - start_time) * 1000)
-            _log_conversion_finished(job_id, preview_id, duration_ms, rows, output_size)
+            _log_conversion_finished(job_id, preview_id, duration_ms, row_count, output_size)
 
     except QueueTimeout as error:
         _log_conversion_error(job_id, preview_id, error, "QueueTimeout")
@@ -251,14 +243,14 @@ def convert():
 
     finish_job(job_id)
 
-    payload = output_path.read_bytes()
+    output_bytes = output_path.read_bytes()
     _cleanup(input_path, output_path)
     delete_preview(preview_id)
 
     _sweep_stale()
 
     return send_file(
-        io.BytesIO(payload),
+        io.BytesIO(output_bytes),
         as_attachment=True,
         download_name=output_name,
         mimetype=EXCEL_MIMETYPE,
@@ -266,7 +258,6 @@ def convert():
 
 
 def _cleanup(*paths):
-    """Hapus file sementara tanpa menggagalkan request jika file sudah tidak ada."""
     for path in paths:
         try:
             path.unlink(missing_ok=True)
@@ -275,10 +266,9 @@ def _cleanup(*paths):
 
 
 def _sweep_stale():
-    """Bersihkan file upload/output lama agar storage tidak menumpuk."""
-    app = current_app
-    deleted_uploads = sweep_old_files(app.config["UPLOAD_FOLDER"])
-    deleted_outputs = sweep_old_files(app.config["OUTPUT_FOLDER"])
+    flask_app = current_app
+    deleted_uploads = sweep_old_files(flask_app.config["UPLOAD_FOLDER"])
+    deleted_outputs = sweep_old_files(flask_app.config["OUTPUT_FOLDER"])
     if deleted_uploads or deleted_outputs:
         current_app.logger.info("Sweep completed", extra={
             "context": {
@@ -289,7 +279,6 @@ def _sweep_stale():
 
 
 def _build_progress(job_id):
-    """Buat callback progress yang menghitung ETA lalu menyimpannya ke job store."""
 
     def handle_update(percent, message, eta, _elapsed):
         update_job(job_id, percent, message, eta_seconds=eta)
@@ -307,7 +296,6 @@ def _build_progress(job_id):
 
 
 def _reject(message, job_id=None, preview_id=None, level="WARNING", log=True, status=400):
-    """Kirim error JSON dan tandai job gagal bila request terkait proses konversi."""
     if log:
         _log_rejection(message, job_id=job_id, preview_id=preview_id, level=level)
 
@@ -320,9 +308,8 @@ def _reject(message, job_id=None, preview_id=None, level="WARNING", log=True, st
     return jsonify({"error": message}), status
 
 
-@main_bp.app_errorhandler(404)
+@main_blueprint.app_errorhandler(404)
 def not_found(error):
-    """Catat 404 tanpa mengubah format respons bawaan Flask."""
     current_app.logger.warning("HTTP error", extra={
         "context": {
             "status": 404,
@@ -333,25 +320,23 @@ def not_found(error):
     return error.get_response()
 
 
-@main_bp.app_errorhandler(500)
+@main_blueprint.app_errorhandler(500)
 def internal_error(error):
-    """Catat 500 dan kirim pesan JSON yang aman."""
-    original = getattr(error, "original_exception", None) or error
+    original_error = getattr(error, "original_exception", None) or error
     current_app.logger.error("HTTP error", extra={
         "context": {
             "status": 500,
             "method": request.method,
             "path": request.path,
-            "error": str(original),
-            "error_type": type(original).__name__,
+            "error": str(original_error),
+            "error_type": type(original_error).__name__,
         }
-    }, exc_info=original)
+    }, exc_info=original_error)
     return jsonify({"error": "Terjadi kesalahan internal pada server."}), 500
 
 
-@main_bp.app_errorhandler(413)
+@main_blueprint.app_errorhandler(413)
 def file_too_large(_error):
-    """Berikan pesan jelas saat ukuran upload melewati batas konfigurasi."""
     limit_mb = current_app.config.get("MAX_UPLOAD_MB", 128)
     message = f"Ukuran file melebihi batas {limit_mb} MB."
     current_app.logger.warning("Upload rejected", extra={

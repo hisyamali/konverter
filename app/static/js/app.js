@@ -1,4 +1,4 @@
-const typeSelect = document.getElementById("conversion_type");
+const conversionTypeSelect = document.getElementById("conversion_type");
 const fileInput = document.getElementById("file");
 const submitButton = document.getElementById("submit-button");
 const converterCard = document.querySelector(".converter-card");
@@ -16,12 +16,12 @@ const stepUpload = document.getElementById("step-upload");
 const stepConvert = document.getElementById("step-convert");
 
 const overlay = document.getElementById("loading-overlay");
-const bar = document.getElementById("progress-bar");
-const track = document.getElementById("progress-track");
+const progressBar = document.getElementById("progress-bar");
+const progressTrack = document.getElementById("progress-track");
 const percentLabel = document.getElementById("progress-percent");
 const messageLabel = document.getElementById("loading-message");
-const etaLabel = document.getElementById("loading-eta");
-const etaRunningLabel = document.getElementById("loading-eta-running");
+const estimatedTimeLabel = document.getElementById("loading-eta");
+const estimatedTimeRunningLabel = document.getElementById("loading-eta-running");
 const errorLabel = document.getElementById("loading-error");
 const closeButton = document.getElementById("loading-close");
 
@@ -42,11 +42,11 @@ let progressFrame = null;
 let progressFrameAt = 0;
 let progressStalledAt = 0;
 let serverHistory = [];
-let etaAnchor = null;
+let estimatedTimeAnchor = null;
 let fakeTimer = null;
 let hideTimer = null;
-let previewXhr = null;
-let currentPreviewId = null;
+let previewRequest = null;
+let currentPreviewIdentifier = null;
 let lastElapsed = null;
 
 function openOverlay() {
@@ -56,15 +56,15 @@ function openOverlay() {
     targetPercent = 0;
     paintedPercent = -1;
     serverHistory = [];
-    etaAnchor = null;
+    estimatedTimeAnchor = null;
     progressStalledAt = performance.now();
     lastElapsed = null;
     errorLabel.hidden = true;
     errorLabel.textContent = "";
-    etaLabel.hidden = true;
-    etaLabel.textContent = "";
-    etaRunningLabel.hidden = true;
-    etaRunningLabel.textContent = "";
+    estimatedTimeLabel.hidden = true;
+    estimatedTimeLabel.textContent = "";
+    estimatedTimeRunningLabel.hidden = true;
+    estimatedTimeRunningLabel.textContent = "";
     closeButton.hidden = true;
     messageLabel.textContent = "Menyiapkan file";
     paintProgress();
@@ -90,10 +90,10 @@ function paintProgress() {
     if (shown !== paintedPercent) {
         paintedPercent = shown;
         percentLabel.textContent = shown;
-        track.setAttribute("aria-valuenow", shown);
+        progressTrack.setAttribute("aria-valuenow", shown);
     }
 
-    bar.style.width = `${currentPercent}%`;
+    progressBar.style.width = `${currentPercent}%`;
 }
 
 function renderProgress(percent) {
@@ -165,15 +165,15 @@ function tickProgress(now) {
 }
 
 function paintCountdown(now) {
-    if (etaAnchor === null) {
+    if (estimatedTimeAnchor === null) {
         return;
     }
 
-    const remaining = etaAnchor.seconds - (now - etaAnchor.at) / 1000;
-    etaLabel.textContent = `± ${formatInterval(Math.max(remaining, 0))} tersisa`;
+    const remaining = estimatedTimeAnchor.seconds - (now - estimatedTimeAnchor.at) / 1000;
+    estimatedTimeLabel.textContent = `± ${formatInterval(Math.max(remaining, 0))} tersisa`;
 }
 
-function setStatus(percent, message, etaSeconds, elapsedSeconds) {
+function setStatus(percent, message, estimatedSecondsValue, elapsedSeconds) {
     const numeric = Number(percent);
     const changed = Number.isFinite(numeric) && Math.round(numeric) !== Math.round(targetPercent)
         || (message && message !== messageLabel.textContent);
@@ -195,39 +195,39 @@ function setStatus(percent, message, etaSeconds, elapsedSeconds) {
 
         if (message.startsWith("Menunggu antrean")) {
             stopFakeProgress();
-            etaAnchor = null;
-            etaLabel.hidden = true;
+            estimatedTimeAnchor = null;
+            estimatedTimeLabel.hidden = true;
         }
     }
 
-    const eta = Number.isFinite(Number(etaSeconds)) ? Number(etaSeconds) : null;
+    const estimatedSeconds = Number.isFinite(Number(estimatedSecondsValue)) ? Number(estimatedSecondsValue) : null;
     const elapsed = Number.isFinite(Number(elapsedSeconds)) ? Number(elapsedSeconds) : null;
 
     if (percent >= 100 && elapsed !== null) {
         stopProgressAnimation();
         currentPercent = 100;
         paintProgress();
-        etaAnchor = null;
-        etaLabel.textContent = `Selesai dalam ${formatInterval(elapsed)}`;
-        etaLabel.hidden = false;
-        etaRunningLabel.hidden = true;
+        estimatedTimeAnchor = null;
+        estimatedTimeLabel.textContent = `Selesai dalam ${formatInterval(elapsed)}`;
+        estimatedTimeLabel.hidden = false;
+        estimatedTimeRunningLabel.hidden = true;
         return;
     }
 
-    if (eta !== null && eta >= 0) {
-        etaAnchor = { seconds: eta, at: now };
+    if (estimatedSeconds !== null && estimatedSeconds >= 0) {
+        estimatedTimeAnchor = { seconds: estimatedSeconds, at: now };
         paintCountdown(now);
-        etaLabel.hidden = false;
+        estimatedTimeLabel.hidden = false;
     } else {
-        etaAnchor = null;
-        etaLabel.hidden = true;
+        estimatedTimeAnchor = null;
+        estimatedTimeLabel.hidden = true;
     }
 
     if (elapsed !== null) {
-        etaRunningLabel.textContent = `berjalan ${formatInterval(elapsed)}`;
-        etaRunningLabel.hidden = false;
+        estimatedTimeRunningLabel.textContent = `berjalan ${formatInterval(elapsed)}`;
+        estimatedTimeRunningLabel.hidden = false;
     } else {
-        etaRunningLabel.hidden = true;
+        estimatedTimeRunningLabel.hidden = true;
     }
 }
 
@@ -270,20 +270,20 @@ function stopFakeProgress() {
 function showError(message) {
     stopFakeProgress();
     stopProgressAnimation();
-    etaAnchor = null;
-    etaLabel.hidden = true;
-    etaLabel.textContent = "";
-    etaRunningLabel.hidden = true;
-    etaRunningLabel.textContent = "";
+    estimatedTimeAnchor = null;
+    estimatedTimeLabel.hidden = true;
+    estimatedTimeLabel.textContent = "";
+    estimatedTimeRunningLabel.hidden = true;
+    estimatedTimeRunningLabel.textContent = "";
     messageLabel.textContent = "Konversi gagal";
     errorLabel.textContent = message;
     errorLabel.hidden = false;
     closeButton.hidden = false;
     submitButton.disabled = false;
-    bar.classList.add("is-error");
+    progressBar.classList.add("is-error");
 }
 
-function buildJobId() {
+function buildJobIdentifier() {
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
         return window.crypto.randomUUID();
     }
@@ -291,10 +291,10 @@ function buildJobId() {
     return `job-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function pollProgress(jobId) {
+function pollProgress(jobIdentifier) {
     const timer = setInterval(async () => {
         try {
-            const response = await fetch(`/progress?job_id=${encodeURIComponent(jobId)}`, {
+            const response = await fetch(`/progress?job_id=${encodeURIComponent(jobIdentifier)}`, {
                 cache: "no-store"
             });
             const job = await response.json();
@@ -319,20 +319,20 @@ function pollProgress(jobId) {
 }
 
 function downloadFile(blob, fileName) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), FADE_OUT_DELAY);
+    const objectUrl = URL.createObjectURL(blob);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = objectUrl;
+    downloadLink.download = fileName;
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), FADE_OUT_DELAY);
 }
 
 function readFileName(request) {
     const disposition = request.getResponseHeader("Content-Disposition") || "";
-    const match = disposition.match(/filename="?([^";]+)"?/i);
-    return match ? match[1] : "hasil-konversi.xlsx";
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+    return filenameMatch ? filenameMatch[1] : "hasil-konversi.xlsx";
 }
 
 function isSpreadsheet(response) {
@@ -340,10 +340,10 @@ function isSpreadsheet(response) {
     return contentType.includes("spreadsheet") || contentType.includes("octet-stream");
 }
 
-function extractErrorMessage(text, contentType) {
+function extractErrorMessage(responseText, contentType) {
     if (contentType.includes("json")) {
         try {
-            const payload = JSON.parse(text);
+            const payload = JSON.parse(responseText);
 
             if (payload && payload.error) {
                 return payload.error;
@@ -353,7 +353,7 @@ function extractErrorMessage(text, contentType) {
         }
     }
 
-    if (text.trim() === "") {
+    if (responseText.trim() === "") {
         return "Terjadi kesalahan saat memproses file.";
     }
 
@@ -384,7 +384,7 @@ function setPreviewStatus(message, isError) {
 }
 
 function clearPreview() {
-    currentPreviewId = null;
+    currentPreviewIdentifier = null;
     previewPanel.hidden = true;
     previewTable.querySelector("colgroup")?.remove();
     previewTable.style.minWidth = "";
@@ -407,7 +407,7 @@ function resetInput() {
 }
 
 function selectedType() {
-    return typeSelect.value;
+    return conversionTypeSelect.value;
 }
 
 function matchesSelectedType(filename) {
@@ -416,13 +416,13 @@ function matchesSelectedType(filename) {
 }
 
 function sendPreview() {
-    const file = fileInput.files[0];
+    const selectedFile = fileInput.files[0];
 
-    if (!file) {
+    if (!selectedFile) {
         return;
     }
 
-    if (!matchesSelectedType(file.name)) {
+    if (!matchesSelectedType(selectedFile.name)) {
         setPreviewStatus("Format file tidak sesuai dengan jenis konversi yang dipilih.", true);
         return;
     }
@@ -431,48 +431,48 @@ function sendPreview() {
     submitButton.disabled = true;
     setPreviewStatus("Mengunggah & memeriksa file…");
 
-    const data = new FormData();
-    data.append("conversion_type", selectedType());
-    data.append("file", file);
+    const formData = new FormData();
+    formData.append("conversion_type", selectedType());
+    formData.append("file", selectedFile);
 
-    previewXhr = new XMLHttpRequest();
-    previewXhr.open("POST", "/preview");
-    previewXhr.responseType = "json";
+    previewRequest = new XMLHttpRequest();
+    previewRequest.open("POST", "/preview");
+    previewRequest.responseType = "json";
 
-    previewXhr.upload.addEventListener("progress", (event) => {
+    previewRequest.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) {
             const ratio = Math.round((event.loaded / event.total) * 100);
             setPreviewStatus(`Mengunggah & memeriksa file… ${ratio}%`);
         }
     });
 
-    previewXhr.addEventListener("load", () => {
-        const status = previewXhr.status;
-        const body = previewXhr.response;
-        previewXhr = null;
+    previewRequest.addEventListener("load", () => {
+        const status = previewRequest.status;
+        const responseBody = previewRequest.response;
+        previewRequest = null;
 
-        if (status === 200 && body) {
-            renderPreview(body);
+        if (status === 200 && responseBody) {
+            renderPreview(responseBody);
             return;
         }
 
-        const message = body && body.error ? body.error : "Gagal memeriksa file. Coba lagi.";
+        const message = responseBody && responseBody.error ? responseBody.error : "Gagal memeriksa file. Coba lagi.";
         setPreviewStatus(message, true);
     });
 
-    previewXhr.addEventListener("error", () => {
-        previewXhr = null;
+    previewRequest.addEventListener("error", () => {
+        previewRequest = null;
         setPreviewStatus("Gagal terhubung ke server. Periksa koneksi lalu coba lagi.", true);
     });
 
-    previewXhr.send(data);
+    previewRequest.send(formData);
 }
 
 function renderPreview(payload) {
-    currentPreviewId = payload.preview_id;
+    currentPreviewIdentifier = payload.preview_id;
 
     if (!payload.filename) {
-        currentPreviewId = null;
+        currentPreviewIdentifier = null;
         setPreviewStatus("Nama file tidak valid. Pilih file lain.", true);
         return;
     }
@@ -644,19 +644,19 @@ function fitPreviewColumnWidths(widths) {
 }
 
 function convertNow() {
-    if (!currentPreviewId) {
+    if (!currentPreviewIdentifier) {
         setPreviewStatus("Unggah file terlebih dahulu untuk melihat pratinjau.", true);
         return;
     }
 
-    const jobId = buildJobId();
-    const data = new FormData();
-    data.append("job_id", jobId);
-    data.append("preview_id", currentPreviewId);
+    const jobIdentifier = buildJobIdentifier();
+    const formData = new FormData();
+    formData.append("job_id", jobIdentifier);
+    formData.append("preview_id", currentPreviewIdentifier);
 
     openOverlay();
     submitButton.disabled = true;
-    const poller = pollProgress(jobId);
+    const progressPoller = pollProgress(jobIdentifier);
 
     const request = new XMLHttpRequest();
     request.open("POST", "/convert");
@@ -664,7 +664,7 @@ function convertNow() {
     request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
 
     request.addEventListener("load", () => {
-        clearInterval(poller);
+        clearInterval(progressPoller);
         stopFakeProgress();
 
         if (request.status === 200 && isSpreadsheet(request)) {
@@ -677,25 +677,25 @@ function convertNow() {
 
         const contentType = request.getResponseHeader("Content-Type") || "";
 
-        request.response.text().then((text) => {
-            showError(extractErrorMessage(text, contentType));
+        request.response.text().then((responseText) => {
+            showError(extractErrorMessage(responseText, contentType));
             submitButton.disabled = false;
         });
     });
 
     request.addEventListener("error", () => {
-        clearInterval(poller);
+        clearInterval(progressPoller);
         showError("Gagal terhubung ke server. Periksa koneksi lalu coba lagi.");
         submitButton.disabled = false;
     });
 
-    request.send(data);
+    request.send(formData);
 }
 
 fileInput.addEventListener("change", () => {
-    if (previewXhr) {
-        previewXhr.abort();
-        previewXhr = null;
+    if (previewRequest) {
+        previewRequest.abort();
+        previewRequest = null;
     }
 
     clearPreview();
@@ -705,10 +705,10 @@ fileInput.addEventListener("change", () => {
     }
 });
 
-typeSelect.addEventListener("change", () => {
-    if (previewXhr) {
-        previewXhr.abort();
-        previewXhr = null;
+conversionTypeSelect.addEventListener("change", () => {
+    if (previewRequest) {
+        previewRequest.abort();
+        previewRequest = null;
     }
 
     clearPreview();
@@ -722,12 +722,12 @@ submitButton.addEventListener("click", convertNow);
 
 closeButton.addEventListener("click", () => {
     closeOverlay();
-    bar.classList.remove("is-error");
+    progressBar.classList.remove("is-error");
 });
 
 overlay.addEventListener("click", (event) => {
     if (event.target === overlay && !closeButton.hidden) {
         closeOverlay();
-        bar.classList.remove("is-error");
+        progressBar.classList.remove("is-error");
     }
 });

@@ -1,196 +1,161 @@
-"""Pemilih backend akun: **Supabase** atau **Appwrite**.
-
-UI (``streamlit_app.py``) memanggil modul ini, bukan langsung ke salah satu
-backend. Backend aktif ditentukan oleh:
-
-* ``KONVERTER_BACKEND`` (env), atau
-* ``[app] backend = "..."`` di ``.streamlit/secrets.toml``.
-
-Nilai yang dikenal: ``supabase``, ``appwrite``, atau ``auto`` (default).
-``auto`` memilih Supabase bila terkonfigurasi, jika tidak Appwrite. Bila tidak
-ada yang siap, aplikasi berjalan sebagai **mode tamu**: semua fungsi akun &
-penyimpanan menjadi no-op aman.
-
-Sengaja tidak ada fallback otomatis saat backend error: akun tidak berpindah
-sendiri antar penyedia, supaya pengguna tidak "kehilangan" akun tanpa sadar.
-"""
-
 import os
 import re
 from typing import Optional
 
 try:
-    import streamlit as st
+    import streamlit
 except ImportError:
-    st = None
+    streamlit = None
 
-from app.services import appwrite_store as _appwrite
-from app.services import supabase_store as _supabase
+from app.services import appwrite_store
+from app.services import supabase_store
 
 SOURCE_BUCKET = "sources"
 RESULT_BUCKET = "results"
 
-_BACKENDS = {"supabase": _supabase, "appwrite": _appwrite}
-_LABELS = {"supabase": "Supabase", "appwrite": "Appwrite"}
+_BACKEND_MODULES = {"supabase": supabase_store, "appwrite": appwrite_store}
+_BACKEND_LABELS = {"supabase": "Supabase", "appwrite": "Appwrite"}
 
 
 def _preference() -> str:
-    """Baca preferensi backend dari env, lalu secrets ``[app] backend``."""
     preference = (os.environ.get("KONVERTER_BACKEND") or "").strip().lower()
 
-    if preference or st is None:
+    if preference or streamlit is None:
         return preference
 
     try:
-        section = st.secrets.get("app")
+        secrets_section = streamlit.secrets.get("app")
     except Exception:
         return ""
 
-    if not section:
+    if not secrets_section:
         return ""
 
-    return (str(dict(section).get("backend") or "")).strip().lower()
+    return (str(dict(secrets_section).get("backend") or "")).strip().lower()
 
 
 def provider() -> Optional[str]:
-    """Nama backend aktif (``"supabase"`` / ``"appwrite"``) atau None bila mode tamu."""
     preference = _preference()
 
-    if preference in _BACKENDS:
-        return preference if _BACKENDS[preference].is_configured() else None
+    if preference in _BACKEND_MODULES:
+        return preference if _BACKEND_MODULES[preference].is_configured() else None
 
-    for name in ("supabase", "appwrite"):
-        if _BACKENDS[name].is_configured():
-            return name
+    for backend_name in ("supabase", "appwrite"):
+        if _BACKEND_MODULES[backend_name].is_configured():
+            return backend_name
 
     return None
 
 
 def provider_label() -> str:
-    """Nama backend yang ramah ditampilkan (kosong bila mode tamu)."""
-    return _LABELS.get(provider() or "", "")
+    return _BACKEND_LABELS.get(provider() or "", "")
 
 
 def backend():
-    """Modul backend aktif, atau None bila mode tamu."""
-    name = provider()
-    return _BACKENDS[name] if name else None
+    backend_name = provider()
+    return _BACKEND_MODULES[backend_name] if backend_name else None
 
 
 def _require():
-    module = backend()
+    backend_module = backend()
 
-    if module is None:
+    if backend_module is None:
         raise RuntimeError("Backend akun belum dikonfigurasi (Supabase/Appwrite).")
 
-    return module
+    return backend_module
 
 
 def is_configured() -> bool:
-    """True bila ada backend akun yang siap dipakai."""
     return provider() is not None
 
 
 def current_user() -> Optional[dict]:
-    """Ringkasan pengguna yang login, atau None untuk mode tamu."""
-    module = backend()
-    return module.current_user() if module else None
+    backend_module = backend()
+    return backend_module.current_user() if backend_module else None
 
 
 def sign_up(email: str, password: str) -> dict:
-    """Daftarkan akun baru di backend aktif."""
     return _require().sign_up(email, password)
 
 
 def sign_in(email: str, password: str) -> dict:
-    """Masuk ke backend aktif."""
     return _require().sign_in(email, password)
 
 
 def sign_out() -> None:
-    """Keluar dari backend aktif (no-op di mode tamu)."""
-    module = backend()
+    backend_module = backend()
 
-    if module:
-        module.sign_out()
+    if backend_module:
+        backend_module.sign_out()
 
 
 def object_path(user_id: str, job_id: str, filename: str) -> str:
-    """Konvensi referensi objek: ``<user_id>/<job_id>/<nama-file>``."""
-    module = backend()
+    backend_module = backend()
 
-    if module:
-        return module.object_path(user_id, job_id, filename)
+    if backend_module:
+        return backend_module.object_path(user_id, job_id, filename)
 
-    base = os.path.basename(filename or "file")
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._") or "file"
-    return f"{user_id}/{job_id}/{cleaned[:120]}"
+    base_name = os.path.basename(filename or "file")
+    cleaned_name = re.sub(r"[^A-Za-z0-9._-]+", "_", base_name).strip("._") or "file"
+    return f"{user_id}/{job_id}/{cleaned_name[:120]}"
 
 
 def upload_file(bucket: str, path: str, data: bytes, content_type: str) -> None:
-    """Unggah file ke bucket backend aktif."""
     _require().upload_file(bucket, path, data, content_type)
 
 
 def signed_url(bucket: str, path: str, expires: Optional[int] = None) -> Optional[str]:
-    """URL unduhan sementara (Supabase); None bila backend tidak mendukungnya."""
-    module = backend()
+    backend_module = backend()
 
-    if module is None:
+    if backend_module is None:
         return None
 
     if expires is None:
-        return module.signed_url(bucket, path)
+        return backend_module.signed_url(bucket, path)
 
-    return module.signed_url(bucket, path, expires)
+    return backend_module.signed_url(bucket, path, expires)
 
 
 def download_bytes(bucket: str, path: str) -> Optional[bytes]:
-    """Isi file dari storage (dipakai backend tanpa signed URL)."""
-    module = backend()
+    backend_module = backend()
 
-    if module is None:
+    if backend_module is None:
         return None
 
-    fetcher = getattr(module, "download_bytes", None)
-    return fetcher(bucket, path) if fetcher else None
+    download_function = getattr(backend_module, "download_bytes", None)
+    return download_function(bucket, path) if download_function else None
 
 
 def remove_objects(bucket: str, paths) -> None:
-    """Hapus objek dari bucket backend aktif."""
-    module = backend()
+    backend_module = backend()
 
-    if module:
-        module.remove_objects(bucket, paths)
+    if backend_module:
+        backend_module.remove_objects(bucket, paths)
 
 
 def create_job(user_id: str, conversion_type: str, original_name: str, source_size: int,
                source_path: Optional[str]) -> Optional[str]:
-    """Sisipkan baris pekerjaan baru; kembalikan id atau None."""
-    module = backend()
-    return module.create_job(user_id, conversion_type, original_name, source_size, source_path) if module else None
+    backend_module = backend()
+    return backend_module.create_job(user_id, conversion_type, original_name, source_size, source_path) if backend_module else None
 
 
 def finish_job(job_id: Optional[str], status: str, **fields) -> None:
-    """Perbarui status pekerjaan (no-op di mode tamu)."""
-    module = backend()
+    backend_module = backend()
 
-    if module:
-        module.finish_job(job_id, status, **fields)
+    if backend_module:
+        backend_module.finish_job(job_id, status, **fields)
 
 
 def list_jobs(user_id: str, limit: int = 50) -> list:
-    """Riwayat pekerjaan milik pengguna (kosong di mode tamu)."""
-    module = backend()
-    return module.list_jobs(user_id, limit) if module else []
+    backend_module = backend()
+    return backend_module.list_jobs(user_id, limit) if backend_module else []
 
 
 def delete_job(user_id: str, job: dict) -> None:
-    """Hapus berkas + baris pekerjaan (no-op di mode tamu)."""
-    module = backend()
+    backend_module = backend()
 
-    if module:
-        module.delete_job(user_id, job)
+    if backend_module:
+        backend_module.delete_job(user_id, job)
 
 
 def _http_health(url: str, headers: Optional[dict] = None) -> tuple:
@@ -201,27 +166,26 @@ def _http_health(url: str, headers: Optional[dict] = None) -> tuple:
 
     try:
         response = httpx.get(url, headers=headers or {}, timeout=6.0)
-    except Exception as exc:
-        return False, f"{type(exc).__name__}: {exc}"
+    except Exception as error:
+        return False, f"{type(error).__name__}: {error}"
 
     return response.status_code < 400, f"HTTP {response.status_code}"
 
 
 def health() -> dict:
-    """Tes koneksi ringan ke backend akun aktif (dipakai tombol \"Tes koneksi\")."""
-    name = provider()
+    backend_name = provider()
 
-    if name is None:
+    if backend_name is None:
         return {"provider": None, "ok": False, "host": "", "detail": "Belum ada backend akun yang dikonfigurasi."}
 
-    module = _BACKENDS[name]
-    config = module._config()
+    backend_module = _BACKEND_MODULES[backend_name]
+    config = backend_module._config()
 
-    if name == "appwrite":
+    if backend_name == "appwrite":
         host = config["endpoint"]
-        ok, detail = _http_health(host.rstrip("/") + "/health")
+        is_healthy, detail = _http_health(host.rstrip("/") + "/health")
     else:
         host = config["url"]
-        ok, detail = _http_health(host.rstrip("/") + "/auth/v1/health", {"apikey": config["anon_key"]})
+        is_healthy, detail = _http_health(host.rstrip("/") + "/auth/v1/health", {"apikey": config["anon_key"]})
 
-    return {"provider": name, "ok": ok, "host": host, "detail": detail}
+    return {"provider": backend_name, "ok": is_healthy, "host": host, "detail": detail}

@@ -31,8 +31,8 @@
                 <div>
                     <label class="mb-1 block text-xs font-semibold text-kv-heading">Baris (tail)</label>
                     <select name="lines" id="lines-select" class="rounded-lg border border-kv-line bg-white px-3 py-1.5 text-sm" onchange="this.form.submit()">
-                        {% for opt in [50, 100, 200, 500, 1000, 2000, 5000] %}
-                        <option value="{{ opt }}" {% if opt == lines %}selected{% endif %}>{{ opt }}</option>
+                        {% for line_option in [50, 100, 200, 500, 1000, 2000, 5000] %}
+                        <option value="{{ line_option }}" {% if line_option == lines %}selected{% endif %}>{{ line_option }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -40,8 +40,8 @@
                     <label class="mb-1 block text-xs font-semibold text-kv-heading">Level</label>
                     <select name="level" id="level-select" class="rounded-lg border border-kv-line bg-white px-3 py-1.5 text-sm" onchange="this.form.submit()">
                         <option value="">Semua</option>
-                        {% for lvl in levels %}
-                        <option value="{{ lvl }}" {% if lvl == level %}selected{% endif %}>{{ lvl }}</option>
+                        {% for level_name in levels %}
+                        <option value="{{ level_name }}" {% if level_name == level %}selected{% endif %}>{{ level_name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -78,7 +78,6 @@
 
 <script src="{{ url_for('static', filename='js/logs.js') }}"></script>
 <script>
-    // Initialize logs.js with server-rendered config
     window.LogsConfig = {
         filename: {{ filename|tojson }},
         lines: {{ lines }},

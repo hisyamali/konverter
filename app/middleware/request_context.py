@@ -1,5 +1,3 @@
-"""Middleware untuk request context: request_id, timing, RAM monitoring, logging."""
-
 import logging
 import os
 import time
@@ -15,19 +13,17 @@ from flask import g, request, current_app
 
 
 def get_memory_usage_mb():
-    """Ambil penggunaan memori proses saat ini dalam MB."""
     if psutil is None:
         return None
     try:
         process = psutil.Process(os.getpid())
-        mem = process.memory_info()
-        return round(mem.rss / 1024 / 1024, 1)
+        memory_info = process.memory_info()
+        return round(memory_info.rss / 1024 / 1024, 1)
     except Exception:
         return None
 
 
 def get_system_memory_percent():
-    """Ambil persentase memori sistem yang terpakai."""
     if psutil is None:
         return None
     try:
@@ -37,7 +33,6 @@ def get_system_memory_percent():
 
 
 def register_request_logging(app):
-    """Register before/after request hooks untuk logging dan monitoring."""
 
     @app.before_request
     def _inject_request_context():
@@ -64,7 +59,7 @@ def register_request_logging(app):
         if g.start_memory_mb is not None and end_memory_mb is not None:
             memory_delta_mb = round(end_memory_mb - g.start_memory_mb, 1)
 
-        sys_mem_pct = get_system_memory_percent()
+        system_memory_percent = get_system_memory_percent()
 
         current_app.logger.info("Request finished", extra={
             "context": {
@@ -76,7 +71,7 @@ def register_request_logging(app):
                 "start_memory_mb": g.start_memory_mb,
                 "end_memory_mb": end_memory_mb,
                 "memory_delta_mb": memory_delta_mb,
-                "system_memory_percent": sys_mem_pct,
+                "system_memory_percent": system_memory_percent,
             }
         })
 
@@ -102,13 +97,11 @@ def register_request_logging(app):
 
 
 def log_with_context(logger, level, message, **context):
-    """Helper log dengan context otomatis request_id jika tersedia."""
-    ctx = dict(context)
+    context = dict(context)
     if hasattr(g, "request_id"):
-        ctx.setdefault("request_id", g.request_id)
-    logger.log(level, message, extra={"context": ctx})
+        context.setdefault("request_id", g.request_id)
+    logger.log(level, message, extra={"context": context})
 
 
 def log_milestone(logger, milestone, **context):
-    """Log milestone konversi dengan context standar."""
     log_with_context(logger, logging.INFO, f"Conversion {milestone}", **context)

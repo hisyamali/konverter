@@ -1,5 +1,3 @@
-"""Entrypoint lokal untuk menjalankan aplikasi Flask saat pengembangan."""
-
 import os
 
 from app import create_app

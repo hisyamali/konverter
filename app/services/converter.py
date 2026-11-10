@@ -1,5 +1,3 @@
-"""Logika baca file, pratinjau, normalisasi data, dan konversi PDF/CSV ke Excel."""
-
 import csv
 import math
 import os
@@ -10,7 +8,7 @@ from concurrent.futures import ProcessPoolExecutor, TimeoutError, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from decimal import Decimal, InvalidOperation
 
-import pandas as pd
+import pandas
 import pdfplumber
 from flask import current_app, has_app_context
 from openpyxl import Workbook
@@ -33,19 +31,17 @@ FAST_WORDS_AVAILABLE = pymupdf is not None and _FAST_WORDS_ENABLED
 
 
 def _get_memory_usage_mb():
-    """Ambil penggunaan memori proses saat ini dalam MB."""
     if psutil is None:
         return None
     try:
         process = psutil.Process(os.getpid())
-        mem = process.memory_info()
-        return round(mem.rss / 1024 / 1024, 1)
+        memory_info = process.memory_info()
+        return round(memory_info.rss / 1024 / 1024, 1)
     except Exception:
         return None
 
 
 def _get_system_memory_percent():
-    """Ambil persentase memori sistem yang terpakai."""
     if psutil is None:
         return None
     try:
@@ -55,19 +51,16 @@ def _get_system_memory_percent():
 
 
 def _log_milestone(milestone, **context):
-    """Log milestone konversi dengan context standar."""
     if has_app_context():
         current_app.logger.info(f"Conversion {milestone}", extra={"context": context})
 
 
 def _log_warning(message, **context):
-    """Log peringatan konversi (mis. degradasi mode) dengan context standar."""
     if has_app_context():
         current_app.logger.warning(message, extra={"context": context})
 
 
 def _log_error(error, **context):
-    """Log error konversi dengan context standar dan traceback."""
     if has_app_context():
         current_app.logger.error(
             "Conversion error",
@@ -77,7 +70,6 @@ def _log_error(error, **context):
 
 
 def _physical_core_count():
-    """Hitung jumlah core fisik (Windows) agar worker tidak berlebih dari CPU nyata."""
     try:
         if os.name != "nt":
             return None
@@ -92,16 +84,16 @@ def _physical_core_count():
             ]
 
         get_info = ctypes.windll.kernel32.GetLogicalProcessorInformation
-        length = ctypes.c_ulong(0)
-        get_info(None, ctypes.byref(length))
+        line_length = ctypes.c_ulong(0)
+        get_info(None, ctypes.byref(line_length))
 
-        if length.value <= 0:
+        if line_length.value <= 0:
             return None
 
-        count = length.value // ctypes.sizeof(SystemLogicalProcessorInformation)
+        count = line_length.value // ctypes.sizeof(SystemLogicalProcessorInformation)
         buffer = (SystemLogicalProcessorInformation * count)()
 
-        if not get_info(buffer, ctypes.byref(length)):
+        if not get_info(buffer, ctypes.byref(line_length)):
             return None
 
         cores = sum(1 for item in buffer if item.Relationship == 0)
@@ -111,14 +103,13 @@ def _physical_core_count():
 
 
 def _physical_cores():
-    """Perkirakan core fisik; fallback ke separuh CPU logis bila deteksi gagal."""
-    detected = _physical_core_count()
+    detected_core_count = _physical_core_count()
 
-    if detected:
-        return detected
+    if detected_core_count:
+        return detected_core_count
 
-    logical = os.cpu_count() or 1
-    return max(1, logical // 2)
+    logical_cpu_count = os.cpu_count() or 1
+    return max(1, logical_cpu_count // 2)
 
 
 PARALLEL_MIN_PAGES = int(os.environ.get("KONVERTER_MIN_PARALLEL_PAGES", "60"))
@@ -168,31 +159,29 @@ _WORKER_PDF = None
 
 
 def convert_csv_to_excel(input_path, output_path, progress=None):
-    """Baca CSV, normalisasi angka nominal, lalu tulis sebagai file Excel."""
-    mem_start = _get_memory_usage_mb()
-    _log_milestone("reading", input_path=input_path, memory_mb=mem_start)
-    _report(progress, 12, "Membaca file CSV")
+    memory_start_mb = _get_memory_usage_mb()
+    _log_milestone("reading", input_path=input_path, memory_mb=memory_start_mb)
+    _report_progress(progress, 12, "Membaca file CSV")
     dataframe = _read_csv(input_path)
 
     if dataframe.empty:
         raise ValueError("File CSV tidak memiliki data.")
 
     _log_milestone("normalize", rows=len(dataframe), columns=list(dataframe.columns))
-    _report(progress, 70, "Menyusun kolom data")
+    _report_progress(progress, 70, "Menyusun kolom data")
 
     _normalize_nominal_values(dataframe)
 
     _log_milestone("write", rows=len(dataframe))
-    _report(progress, 88, "Menulis file Excel")
+    _report_progress(progress, 88, "Menulis file Excel")
     _write_excel(dataframe, output_path)
 
-    mem_end = _get_memory_usage_mb()
-    _log_milestone("done", output_path=output_path, memory_mb=mem_end, memory_delta_mb=round(mem_end - mem_start, 1) if mem_start and mem_end else None)
-    _report(progress, 100, "Selesai")
+    memory_end_mb = _get_memory_usage_mb()
+    _log_milestone("done", output_path=output_path, memory_mb=memory_end_mb, memory_delta_mb=round(memory_end_mb - memory_start_mb, 1) if memory_start_mb and memory_end_mb else None)
+    _report_progress(progress, 100, "Selesai")
 
 
 def _write_excel(dataframe, output_path, sheet_name="Sheet1", include_header=True):
-    """Tulis DataFrame ke workbook Excel write-only agar hemat memori untuk file besar."""
     workbook = Workbook(write_only=True)
     sheet = workbook.create_sheet(sheet_name)
 
@@ -206,15 +195,14 @@ def _write_excel(dataframe, output_path, sheet_name="Sheet1", include_header=Tru
 
 
 def convert_pdf_to_excel(input_path, output_path, progress=None, total_pages=None):
-    """Ekstrak semua tabel/transaksi PDF, rapikan header berulang, lalu ekspor ke Excel."""
-    mem_start = _get_memory_usage_mb()
-    sys_mem_start = _get_system_memory_percent()
+    memory_start_mb = _get_memory_usage_mb()
+    system_memory_start_percent = _get_system_memory_percent()
 
     strategy = _detect_pdf_strategy(input_path)
-    _log_milestone("reading", input_path=input_path, total_pages=total_pages, memory_mb=mem_start, system_memory_percent=sys_mem_start, strategy=strategy)
+    _log_milestone("reading", input_path=input_path, total_pages=total_pages, memory_mb=memory_start_mb, system_memory_percent=system_memory_start_percent, strategy=strategy)
 
     if total_pages is None:
-        _report(progress, 6, "Membuka file PDF")
+        _report_progress(progress, 6, "Membuka file PDF")
 
     if strategy == "lines":
         builder = _RowBuilder()
@@ -229,42 +217,40 @@ def convert_pdf_to_excel(input_path, output_path, progress=None, total_pages=Non
     if not rows:
         raise ValueError("Tidak ada tabel yang bisa dibaca dari PDF.")
 
-    mem_after_read = _get_memory_usage_mb()
-    _log_milestone("normalize", rows=len(rows), columns=None, memory_mb=mem_after_read, memory_delta_mb=round(mem_after_read - mem_start, 1) if mem_start and mem_after_read else None, strategy=strategy)
-    _report(progress, 86, "Menyusun kolom data")
+    memory_after_read_mb = _get_memory_usage_mb()
+    _log_milestone("normalize", rows=len(rows), columns=None, memory_mb=memory_after_read_mb, memory_delta_mb=round(memory_after_read_mb - memory_start_mb, 1) if memory_start_mb and memory_after_read_mb else None, strategy=strategy)
+    _report_progress(progress, 86, "Menyusun kolom data")
 
     _normalize_table(rows)
-    dataframe = pd.DataFrame(rows)
+    dataframe = pandas.DataFrame(rows)
     _normalize_nominal_values(dataframe)
 
     _log_milestone("write", rows=len(dataframe), columns=list(dataframe.columns))
-    _report(progress, 93, "Menulis file Excel")
+    _report_progress(progress, 93, "Menulis file Excel")
     _write_excel(dataframe, output_path, sheet_name="Data", include_header=False)
 
-    mem_end = _get_memory_usage_mb()
-    sys_mem_end = _get_system_memory_percent()
-    _log_milestone("done", output_path=output_path, rows=len(dataframe), memory_mb=mem_end, memory_delta_mb=round(mem_end - mem_start, 1) if mem_start and mem_end else None, system_memory_percent=sys_mem_end, strategy=strategy)
-    _report(progress, 100, "Selesai")
+    memory_end_mb = _get_memory_usage_mb()
+    system_memory_end_percent = _get_system_memory_percent()
+    _log_milestone("done", output_path=output_path, rows=len(dataframe), memory_mb=memory_end_mb, memory_delta_mb=round(memory_end_mb - memory_start_mb, 1) if memory_start_mb and memory_end_mb else None, system_memory_percent=system_memory_end_percent, strategy=strategy)
+    _report_progress(progress, 100, "Selesai")
 
 
 def _collect_pdf_tables(input_path, progress, total_pages, on_tables):
-    """Baca tabel PDF sekuensial atau paralel, kirim ke on_tables sesuai urutan halaman."""
     if total_pages is None:
         total_pages = _count_pages(input_path)
 
-    workers, use_pool = _plan_read(total_pages)
+    worker_count, use_pool = _plan_read(total_pages)
 
-    _report(progress, 8, f"Halaman 0 dari halaman {total_pages}")
+    _report_progress(progress, 8, f"Halaman 0 dari halaman {total_pages}")
 
-    if not use_pool:
+    if not should_use_pool:
         _read_pages_sequential(input_path, total_pages, progress, on_tables)
         return
 
-    _read_chunks_parallel(input_path, _build_chunks(total_pages), workers, total_pages, progress, on_tables)
+    _read_chunks_parallel(input_path, _build_chunks(total_pages), worker_count, total_pages, progress, on_tables)
 
 
 def _count_pages(input_path):
-    """Hitung jumlah halaman PDF sebelum proses ekstraksi berjalan."""
     document = _open_text_document(input_path)
 
     try:
@@ -274,7 +260,6 @@ def _count_pages(input_path):
 
 
 def _open_text_document(input_path):
-    """Buka PDF dengan engine tercepat yang tersedia untuk ekstraksi kata."""
     if FAST_WORDS_AVAILABLE:
         return pymupdf.open(str(input_path))
 
@@ -282,32 +267,29 @@ def _open_text_document(input_path):
 
 
 def _document_page_count(document):
-    """Ambil jumlah halaman dari dokumen PyMuPDF maupun pdfplumber."""
     page_count = getattr(document, "page_count", None)
 
     if isinstance(page_count, int):
         return page_count
 
-    pages = getattr(document, "pages", None)
+    page_list = getattr(document, "pages", None)
 
-    if isinstance(pages, list):
-        return len(pages)
+    if isinstance(page_list, list):
+        return len(page_list)
 
     return len(document)
 
 
 def _iter_pages(document, start=0):
-    """Iterasi halaman mulai dari indeks tertentu untuk kedua engine."""
-    pages = getattr(document, "pages", None)
+    page_list = getattr(document, "pages", None)
 
-    if isinstance(pages, list):
-        return pages[start:]
+    if isinstance(page_list, list):
+        return page_list[start:]
 
     return (document[index] for index in range(start, len(document)))
 
 
 def _page_words(page):
-    """Ekstrak kata (teks + posisi) dari halaman PyMuPDF atau pdfplumber."""
     if hasattr(page, "extract_words"):
         return page.extract_words()
 
@@ -318,67 +300,48 @@ def _page_words(page):
 
 
 def _worker_count(total_pages, minimum=PARALLEL_MIN_PAGES):
-    """Tentukan jumlah worker paralel; 0 berarti cukup diproses sekuensial.
-
-    Angka ini belum memperhitungkan konversi lain yang sedang berjalan; lihat
-    ``_plan_read`` untuk pembagian worker antar konversi.
-    """
     if total_pages <= minimum:
         return 0
 
-    logical = os.cpu_count() or 1
-    workers = min(logical, PARALLEL_MAX_WORKERS)
-    available_gb = _available_memory_gb()
+    logical_cpu_count = os.cpu_count() or 1
+    worker_count = min(logical_cpu_count, PARALLEL_MAX_WORKERS)
+    available_memory_gb = _available_memory_gb()
 
-    if available_gb is not None:
-        by_memory = int((available_gb - PARALLEL_MEMORY_RESERVE_GB) / PARALLEL_MEMORY_GB_PER_WORKER)
-        workers = min(workers, max(by_memory, 1))
+    if available_memory_gb is not None:
+        workers_by_memory = int((available_memory_gb - PARALLEL_MEMORY_RESERVE_GB) / PARALLEL_MEMORY_GB_PER_WORKER)
+        worker_count = min(worker_count, max(workers_by_memory, 1))
 
-    return max(1, workers)
+    return max(1, worker_count)
 
 
 def _spawn_allowed():
-    """Cek apakah RAM masih cukup untuk menambah satu proses worker."""
-    available_gb = _available_memory_gb()
+    available_memory_gb = _available_memory_gb()
 
-    if available_gb is None:
+    if available_memory_gb is None:
         return True
 
-    return available_gb >= PARALLEL_MEMORY_RESERVE_GB + PARALLEL_MEMORY_GB_PER_WORKER
+    return available_memory_gb >= PARALLEL_MEMORY_RESERVE_GB + PARALLEL_MEMORY_GB_PER_WORKER
 
 
 def _plan_read(total_pages, minimum=PARALLEL_MIN_PAGES):
-    """Tentukan rencana pembacaan PDF: ``(workers, pakai_proses)``.
-
-    - Bila RAM tidak cukup untuk satu proses anak, semua dikerjakan di proses
-      web (sekuensial) agar tidak memicu swap.
-    - Dokumen di bawah ambang, atau yang hanya kebagian satu worker, tetap
-      sekuensial selama tidak ada konversi lain. Saat ada konversi lain, satu
-      proses anak dipakai agar pekerjaan tiap user tidak berebut GIL
-      (pdfplumber/pdfminer murni Python).
-    - Dokumen besar memakai beberapa worker, dibagi rata dengan konversi lain
-      yang aktif sehingga total proses mendekati jumlah core.
-    """
     if not _spawn_allowed():
         return 1, False
 
-    base = _worker_count(total_pages, minimum)
-    others_running = concurrency.active_conversions() > 1
+    base_worker_count = _worker_count(total_pages, minimum)
+    other_conversions_running = concurrency.active_conversions() > 1
 
-    if base <= 1:
-        return (1, True) if others_running else (1, False)
+    if base_worker_count <= 1:
+        return (1, True) if other_conversions_running else (1, False)
 
-    return max(1, concurrency.worker_budget(base)), True
+    return max(1, concurrency.worker_budget(base_worker_count)), True
 
 
 def _memory_pressure():
-    """Cek apakah RAM kosong turun di bawah ambang aman saat konversi berjalan."""
-    available_gb = _available_memory_gb()
-    return available_gb is not None and available_gb < PARALLEL_MEMORY_FLOOR_GB
+    available_memory_gb = _available_memory_gb()
+    return available_memory_gb is not None and available_memory_gb < PARALLEL_MEMORY_FLOOR_GB
 
 
 def _available_memory_gb():
-    """Ambil estimasi RAM tersedia di Windows atau Linux untuk membatasi worker."""
     try:
         if os.name == "nt":
             import ctypes
@@ -402,8 +365,8 @@ def _available_memory_gb():
             return status.avail_phys / (1024 ** 3)
 
         if os.path.exists("/proc/meminfo"):
-            with open("/proc/meminfo", "r", encoding="utf-8") as meminfo:
-                for line in meminfo:
+            with open("/proc/meminfo", "r", encoding="utf-8") as memory_info_file:
+                for line in memory_info_file:
                     if line.startswith("MemAvailable:"):
                         return int(line.split()[1]) / (1024 ** 2)
 
@@ -413,7 +376,6 @@ def _available_memory_gb():
 
 
 def _build_chunks(total_pages):
-    """Bagi halaman PDF menjadi rentang kecil untuk diproses worker paralel."""
     return [
         (start, min(start + PARALLEL_CHUNK_PAGES, total_pages))
         for start in range(0, total_pages, PARALLEL_CHUNK_PAGES)
@@ -421,112 +383,107 @@ def _build_chunks(total_pages):
 
 
 def _read_pages_sequential(input_path, total_pages, progress, on_tables, start=0):
-    """Baca halaman PDF satu per satu, digunakan untuk file kecil atau fallback aman."""
-    pages_read = start
+    pages_read_count = start
 
     with pdfplumber.open(input_path) as pdf:
         for page in pdf.pages[start:]:
             on_tables(_page_tables(page))
-            pages_read += 1
-            _report(progress, _percent_from_pages(pages_read, total_pages), _status_message(pages_read, total_pages))
+            pages_read_count += 1
+            _report_progress(progress, _percent_from_pages(pages_read_count, total_pages), _status_message(pages_read_count, total_pages))
 
 
-def _read_chunks_parallel(input_path, chunks, workers, total_pages, progress, on_tables):
-    """Baca chunk PDF dengan banyak proses sambil mengalirkan hasil sesuai urutan halaman."""
+def _read_chunks_parallel(input_path, chunks, worker_count, total_pages, progress, on_tables):
     chunk_end = dict(chunks)
-    buffered = {}
-    next_expected = 0
-    pages_read = 0
-    last_success = time.monotonic()
-    degraded = False
+    buffered_chunks = {}
+    next_expected_page = 0
+    pages_read_count = 0
+    last_success_time = time.monotonic()
+    is_degraded = False
     degrade_reason = None
 
-    executor = ProcessPoolExecutor(
-        max_workers=workers,
+    process_executor = ProcessPoolExecutor(
+        max_workers=worker_count,
         initializer=_init_pdf_worker,
         initargs=(str(input_path),),
         max_tasks_per_child=PARALLEL_MAX_TASKS_PER_CHILD,
     )
-    futures = {executor.submit(_extract_chunk_task, chunk): chunk for chunk in chunks}
-    pending = set(futures)
+    submitted_futures = {process_executor.submit(_extract_chunk_task, chunk): chunk for chunk in chunks}
+    pending_futures = set(submitted_futures)
 
     try:
-        while pending and not degraded:
+        while pending_futures and not is_degraded:
             try:
-                for future in as_completed(pending, timeout=PARALLEL_STALL_REPORT_SECONDS):
+                for future in as_completed(pending_futures, timeout=PARALLEL_STALL_REPORT_SECONDS):
                     chunk_start, chunk_tables = future.result()
-                    buffered[chunk_start] = chunk_tables
-                    chunk_start, chunk_stop = futures[future]
-                    pages_read += chunk_stop - chunk_start
-                    pending.remove(future)
-                    last_success = time.monotonic()
+                    buffered_chunks[chunk_start] = chunk_tables
+                    chunk_start, chunk_stop = submitted_futures[future]
+                    pages_read_count += chunk_stop - chunk_start
+                    pending_futures.remove(future)
+                    last_success_time = time.monotonic()
 
-                    while next_expected in buffered:
-                        on_tables(buffered.pop(next_expected))
-                        next_expected = chunk_end[next_expected]
+                    while next_expected_page in buffered_chunks:
+                        on_tables(buffered_chunks.pop(next_expected_page))
+                        next_expected_page = chunk_end[next_expected_page]
 
-                    _report(progress, _percent_from_pages(pages_read, total_pages), _status_message(pages_read, total_pages))
+                    _report_progress(progress, _percent_from_pages(pages_read_count, total_pages), _status_message(pages_read_count, total_pages))
 
                     if _memory_pressure():
-                        degraded = True
+                        is_degraded = True
                         degrade_reason = "memori menipis"
                         break
             except TimeoutError:
-                stalled_for = int(time.monotonic() - last_success)
-                _report(
+                stalled_seconds = int(time.monotonic() - last_success_time)
+                _report_progress(
                     progress,
-                    _percent_from_pages(pages_read, total_pages),
-                    f"{_status_message(pages_read, total_pages)} — pembacaan melambat (±{stalled_for} detik), tetap berjalan",
+                    _percent_from_pages(pages_read_count, total_pages),
+                    f"{_status_message(pages_read_count, total_pages)} — pembacaan melambat (±{stalled_seconds} detik), tetap berjalan",
                 )
 
-                if stalled_for >= PARALLEL_DEGRADE_SECONDS:
-                    degraded = True
+                if stalled_seconds >= PARALLEL_DEGRADE_SECONDS:
+                    is_degraded = True
                     degrade_reason = "pembacaan melambat"
     except BrokenProcessPool as error:
-        _abort_executor(executor, pending)
-        _log_error(error, stage="parallel_read", total_pages=total_pages, pages_read=pages_read)
+        _abort_executor(process_executor, pending_futures)
+        _log_error(error, stage="parallel_read", total_pages=total_pages, pages_read=pages_read_count)
         raise RuntimeError("Proses pembacaan PDF terhenti. Silakan coba lagi.")
     except Exception as error:
-        _abort_executor(executor, pending)
-        _log_error(error, stage="parallel_read", total_pages=total_pages, pages_read=pages_read)
+        _abort_executor(process_executor, pending_futures)
+        _log_error(error, stage="parallel_read", total_pages=total_pages, pages_read=pages_read_count)
         raise
     else:
-        if degraded:
-            _abort_executor(executor, pending)
+        if is_degraded:
+            _abort_executor(process_executor, pending_futures)
         else:
-            executor.shutdown(wait=True)
+            process_executor.shutdown(wait=True)
 
-    if degraded:
+    if is_degraded:
         if degrade_reason == "memori menipis":
-            message = f"{_status_message(next_expected, total_pages)} — memori menipis, beralih ke mode hemat (satu-per-satu)"
+            message = f"{_status_message(next_expected_page, total_pages)} — memori menipis, beralih ke mode hemat (satu-per-satu)"
         else:
-            message = f"{_status_message(next_expected, total_pages)} — beralih ke mode satu-per-satu agar pasti selesai"
+            message = f"{_status_message(next_expected_page, total_pages)} — beralih ke mode satu-per-satu agar pasti selesai"
 
-        _log_warning("Conversion degraded", reason=degrade_reason, next_expected=next_expected, total_pages=total_pages)
-        _report(progress, _percent_from_pages(next_expected, total_pages), message)
-        _read_pages_sequential(input_path, total_pages, progress, on_tables, start=next_expected)
+        _log_warning("Conversion degraded", reason=degrade_reason, next_expected=next_expected_page, total_pages=total_pages)
+        _report_progress(progress, _percent_from_pages(next_expected_page, total_pages), message)
+        _read_pages_sequential(input_path, total_pages, progress, on_tables, start=next_expected_page)
 
 
-def _abort_executor(executor, pending):
-    """Batalkan pekerjaan paralel yang tersisa saat perlu fallback atau terjadi error."""
-    for future in pending:
+def _abort_executor(process_executor, pending_futures):
+    for future in pending_futures:
         future.cancel()
 
     try:
-        executor.shutdown(wait=False, cancel_futures=True)
+        process_executor.shutdown(wait=False, cancel_futures=True)
     except ValueError:
         pass
 
 
 def _init_pdf_worker(pdf_path):
-    """Buka PDF sekali di tiap worker agar setiap task tidak membuka file ulang."""
     _apply_polite_priority()
     global _WORKER_PDF
     _WORKER_PDF = pdfplumber.open(pdf_path)
 
 
 def _apply_polite_priority():
-    """Turunkan prioritas proses worker agar aplikasi lain tetap responsif (Windows)."""
     if not POLITE_MODE:
         return
 
@@ -534,8 +491,8 @@ def _apply_polite_priority():
         if os.name == "nt":
             import ctypes
 
-            handle = ctypes.windll.kernel32.GetCurrentProcess()
-            ctypes.windll.kernel32.SetPriorityClass(handle, _BELOW_NORMAL_PRIORITY_CLASS)
+            process_handle = ctypes.windll.kernel32.GetCurrentProcess()
+            ctypes.windll.kernel32.SetPriorityClass(process_handle, _BELOW_NORMAL_PRIORITY_CLASS)
         else:
             os.nice(5)
     except Exception:
@@ -543,24 +500,22 @@ def _apply_polite_priority():
 
 
 def _extract_chunk_task(chunk):
-    """Wrapper task worker untuk mengembalikan posisi chunk dan hasil tabelnya."""
     start, end = chunk
     return start, _extract_chunk(_WORKER_PDF, start, end)
 
 
 def _detect_pdf_strategy(input_path):
-    """Deteksi strategi ekstraksi: 'lines' jika halaman pertama punya tabel bergaris dengan data, selain itu 'text'."""
     try:
         with pdfplumber.open(input_path) as pdf:
             if not pdf.pages:
                 return "lines"
-            preview = pdf.pages[0].extract_tables(PDF_TABLE_SETTINGS)
+            preview_tables = pdf.pages[0].extract_tables(PDF_TABLE_SETTINGS)
     except Exception:
         return "lines"
 
     data_rows = 0
-    if preview:
-        for table in preview:
+    if preview_tables:
+        for table in preview_tables:
             if table:
                 data_rows += max(len(table) - 1, 0)
 
@@ -568,36 +523,35 @@ def _detect_pdf_strategy(input_path):
 
 
 def _extract_text_page(page):
-    """Ekstrak transaksi dari satu halaman PDF berbasis teks (posisi kolom tetap)."""
     words = _page_words(page)
     words.sort(key=lambda w: (w["top"], w["x0"]))
 
-    clusters = []
+    word_clusters = []
     for word in words:
-        if clusters and abs(clusters[-1]["y"] - word["top"]) <= TEXT_ROW_Y_TOLERANCE:
-            clusters[-1]["words"].append(word)
+        if word_clusters and abs(word_clusters[-1]["y"] - word["top"]) <= TEXT_ROW_Y_TOLERANCE:
+            word_clusters[-1]["words"].append(word)
         else:
-            clusters.append({"y": word["top"], "words": [word]})
+            word_clusters.append({"y": word["top"], "words": [word]})
 
-    date_re = re.compile(r"^\d{2}-\d{2}-\d{4}$")
+    date_pattern = re.compile(r"^\d{2}-\d{2}-\d{4}$")
     rows = []
     current = None
 
     def _amount_in(tokens, bounds):
         low, high = bounds
-        return " ".join(w["text"] for w in tokens if low <= w["x0"] < high)
+        return " ".join(word["text"] for word in tokens if low <= word["x0"] < high)
 
-    for cluster in clusters:
-        tokens = sorted(cluster["words"], key=lambda w: w["x0"])
+    for cluster in word_clusters:
+        tokens = sorted(cluster["words"], key=lambda word: word["x0"])
         if not tokens:
             continue
 
-        first = tokens[0]
-        if date_re.match(first["text"]) and first["x0"] < TEXT_DATE_X_MAX:
+        first_token = tokens[0]
+        if date_pattern.match(first_token["text"]) and first_token["x0"] < TEXT_DATE_X_MAX:
             if current is not None:
                 rows.append(_finalize_text_transaction(current))
             current = {
-                "date": first["text"],
+                "date": first_token["text"],
                 "debet": _amount_in(tokens, TEXT_DEBET_X),
                 "kredit": _amount_in(tokens, TEXT_KREDIT_X),
                 "saldo": _amount_in(tokens, TEXT_SALDO_X),
@@ -609,13 +563,13 @@ def _extract_text_page(page):
         if current is None:
             continue
 
-        line_text = " ".join(w["text"] for w in tokens)
+        line_text = " ".join(word["text"] for word in tokens)
         if re.match(r"Page:", line_text):
             continue
 
-        desc_words = [w["text"] for w in tokens if TEXT_DESC_X_MIN <= w["x0"] < TEXT_DESC_X_MAX]
-        if desc_words:
-            current["desc"].append(" ".join(desc_words))
+        description_words = [word["text"] for word in tokens if TEXT_DESC_X_MIN <= word["x0"] < TEXT_DESC_X_MAX]
+        if description_words:
+            current["desc"].append(" ".join(description_words))
 
     if current is not None:
         rows.append(_finalize_text_transaction(current))
@@ -636,7 +590,6 @@ def _finalize_text_transaction(transaction):
 
 
 def _extract_text_chunk_task(chunk):
-    """Task worker: ekstrak transaksi teks dari rentang halaman PDF."""
     start, end = chunk
     rows = []
 
@@ -646,129 +599,123 @@ def _extract_text_chunk_task(chunk):
 
 
 def _iter_text_pages(document, start, end):
-    """Iterasi halaman [start, end) untuk dokumen PyMuPDF maupun pdfplumber."""
-    pages = getattr(document, "pages", None)
+    page_list = getattr(document, "pages", None)
 
-    if isinstance(pages, list):
-        return pages[start:end]
+    if isinstance(page_list, list):
+        return page_list[start:end]
 
     return (document[index] for index in range(start, min(end, len(document))))
 
 
 def _init_text_worker(pdf_path):
-    """Buka PDF di worker dengan engine teks tercepat."""
     _apply_polite_priority()
     global _WORKER_PDF
     _WORKER_PDF = _open_text_document(pdf_path)
 
 
 def _read_text_pages_sequential(input_path, total_pages, progress, on_rows, start=0):
-    """Baca halaman PDF berbasis teks satu per satu."""
-    pages_read = start
+    pages_read_count = start
     document = _open_text_document(input_path)
 
     try:
         for page in _iter_pages(document, start):
             on_rows(_extract_text_page(page))
-            pages_read += 1
-            _report(progress, _percent_from_pages(pages_read, total_pages), _status_message(pages_read, total_pages))
+            pages_read_count += 1
+            _report_progress(progress, _percent_from_pages(pages_read_count, total_pages), _status_message(pages_read_count, total_pages))
     finally:
         document.close()
 
 
-def _read_text_chunks_parallel(input_path, chunks, workers, total_pages, progress, on_rows):
-    """Baca chunk PDF berbasis teks dengan banyak proses, kirim hasil sesuai urutan halaman."""
+def _read_text_chunks_parallel(input_path, chunks, worker_count, total_pages, progress, on_rows):
     chunk_end = dict(chunks)
-    buffered = {}
-    next_expected = 0
-    pages_read = 0
-    last_success = time.monotonic()
-    degraded = False
+    buffered_chunks = {}
+    next_expected_page = 0
+    pages_read_count = 0
+    last_success_time = time.monotonic()
+    is_degraded = False
     degrade_reason = None
 
-    executor = ProcessPoolExecutor(
-        max_workers=workers,
+    process_executor = ProcessPoolExecutor(
+        max_workers=worker_count,
         initializer=_init_text_worker,
         initargs=(str(input_path),),
         max_tasks_per_child=PARALLEL_MAX_TASKS_PER_CHILD,
     )
-    futures = {executor.submit(_extract_text_chunk_task, chunk): chunk for chunk in chunks}
-    pending = set(futures)
+    submitted_futures = {process_executor.submit(_extract_text_chunk_task, chunk): chunk for chunk in chunks}
+    pending_futures = set(submitted_futures)
 
     try:
-        while pending and not degraded:
+        while pending_futures and not is_degraded:
             try:
-                for future in as_completed(pending, timeout=PARALLEL_STALL_REPORT_SECONDS):
+                for future in as_completed(pending_futures, timeout=PARALLEL_STALL_REPORT_SECONDS):
                     chunk_start, chunk_rows = future.result()
-                    buffered[chunk_start] = chunk_rows
-                    chunk_start_key, chunk_stop = futures[future]
-                    pages_read += chunk_stop - chunk_start_key
-                    pending.remove(future)
-                    last_success = time.monotonic()
+                    buffered_chunks[chunk_start] = chunk_rows
+                    chunk_start_key, chunk_stop = submitted_futures[future]
+                    pages_read_count += chunk_stop - chunk_start_key
+                    pending_futures.remove(future)
+                    last_success_time = time.monotonic()
 
-                    while next_expected in buffered:
-                        on_rows(buffered.pop(next_expected))
-                        next_expected = chunk_end[next_expected]
+                    while next_expected_page in buffered_chunks:
+                        on_rows(buffered_chunks.pop(next_expected_page))
+                        next_expected_page = chunk_end[next_expected_page]
 
-                    _report(progress, _percent_from_pages(pages_read, total_pages), _status_message(pages_read, total_pages))
+                    _report_progress(progress, _percent_from_pages(pages_read_count, total_pages), _status_message(pages_read_count, total_pages))
 
                     if _memory_pressure():
-                        degraded = True
+                        is_degraded = True
                         degrade_reason = "memori menipis"
                         break
             except TimeoutError:
-                stalled_for = int(time.monotonic() - last_success)
-                _report(
+                stalled_seconds = int(time.monotonic() - last_success_time)
+                _report_progress(
                     progress,
-                    _percent_from_pages(pages_read, total_pages),
-                    f"{_status_message(pages_read, total_pages)} — pembacaan melambat (±{stalled_for} detik), tetap berjalan",
+                    _percent_from_pages(pages_read_count, total_pages),
+                    f"{_status_message(pages_read_count, total_pages)} — pembacaan melambat (±{stalled_seconds} detik), tetap berjalan",
                 )
 
-                if stalled_for >= PARALLEL_DEGRADE_SECONDS:
-                    degraded = True
+                if stalled_seconds >= PARALLEL_DEGRADE_SECONDS:
+                    is_degraded = True
                     degrade_reason = "pembacaan melambat"
     except BrokenProcessPool:
-        _abort_executor(executor, pending)
+        _abort_executor(process_executor, pending_futures)
         raise RuntimeError("Proses pembacaan PDF terhenti. Silakan coba lagi.")
     except Exception as error:
-        _abort_executor(executor, pending)
-        _log_error(error, stage="parallel_text_read", total_pages=total_pages, pages_read=pages_read)
+        _abort_executor(process_executor, pending_futures)
+        _log_error(error, stage="parallel_text_read", total_pages=total_pages, pages_read=pages_read_count)
         raise
     else:
-        if degraded:
-            _abort_executor(executor, pending)
+        if is_degraded:
+            _abort_executor(process_executor, pending_futures)
         else:
-            executor.shutdown(wait=True)
+            process_executor.shutdown(wait=True)
 
-    if degraded:
+    if is_degraded:
         if degrade_reason == "memori menipis":
-            message = f"{_status_message(next_expected, total_pages)} — memori menipis, beralih ke mode hemat (satu-per-satu)"
+            message = f"{_status_message(next_expected_page, total_pages)} — memori menipis, beralih ke mode hemat (satu-per-satu)"
         else:
-            message = f"{_status_message(next_expected, total_pages)} — beralih ke mode satu-per-satu agar pasti selesai"
+            message = f"{_status_message(next_expected_page, total_pages)} — beralih ke mode satu-per-satu agar pasti selesai"
 
-        _log_warning("Conversion degraded", reason=degrade_reason, next_expected=next_expected, total_pages=total_pages)
-        _report(progress, _percent_from_pages(next_expected, total_pages), message)
-        _read_text_pages_sequential(input_path, total_pages, progress, on_rows, start=next_expected)
+        _log_warning("Conversion degraded", reason=degrade_reason, next_expected=next_expected_page, total_pages=total_pages)
+        _report_progress(progress, _percent_from_pages(next_expected_page, total_pages), message)
+        _read_text_pages_sequential(input_path, total_pages, progress, on_rows, start=next_expected_page)
 
 
 def _collect_text_rows(input_path, progress, total_pages, on_rows):
-    """Baca transaksi teks PDF sekuensial atau paralel, kirim ke on_rows sesuai urutan halaman."""
     if total_pages is None:
         total_pages = _count_pages(input_path)
 
-    workers, use_pool = _plan_read(total_pages, TEXT_PARALLEL_MIN_PAGES)
+    worker_count, use_pool = _plan_read(total_pages, TEXT_PARALLEL_MIN_PAGES)
 
-    _report(progress, 8, f"Halaman 0 dari halaman {total_pages}")
+    _report_progress(progress, 8, f"Halaman 0 dari halaman {total_pages}")
 
-    if not use_pool:
+    if not should_use_pool:
         _read_text_pages_sequential(input_path, total_pages, progress, on_rows)
         return
 
-    _read_text_chunks_parallel(input_path, _build_chunks(total_pages), workers, total_pages, progress, on_rows)
+    _read_text_chunks_parallel(input_path, _build_chunks(total_pages), worker_count, total_pages, progress, on_rows)
 
 
 def _page_tables(page):
-    """Ekstrak dan bersihkan semua tabel yang ditemukan pada satu halaman PDF."""
     tables = []
 
     try:
@@ -784,7 +731,6 @@ def _page_tables(page):
 
 
 def _extract_chunk(pdf, start, end):
-    """Ekstrak tabel dari rentang halaman PDF tertentu."""
     tables = []
 
     for page in pdf.pages[start:end]:
@@ -793,51 +739,42 @@ def _extract_chunk(pdf, start, end):
     return tables
 
 
-def _percent_from_pages(pages_read, total_pages):
-    """Ubah jumlah halaman terbaca menjadi persentase progress tahap ekstraksi."""
-    return 8 + int(76 * pages_read / max(total_pages, 1))
+def _percent_from_pages(pages_read_count, total_pages):
+    return 8 + int(76 * pages_read_count / max(total_pages, 1))
 
 
-def _status_message(pages_read, total_pages):
-    """Buat pesan progress pembacaan halaman untuk frontend."""
-    return f"Halaman {pages_read} dari halaman {total_pages}"
+def _status_message(pages_read_count, total_pages):
+    return f"Halaman {pages_read_count} dari halaman {total_pages}"
 
 
-_PAGE_STATUS_RE = re.compile(r"^Halaman (\d+) dari halaman (\d+)$")
+_PAGE_STATUS_PATTERN = re.compile(r"^Halaman (\d+) dari halaman (\d+)$")
 _progress_state = weakref.WeakKeyDictionary()
 
 
-def _should_report_pages(progress, pages):
-    """Cek apakah kemajuan halaman sudah cukup jauh untuk dikirim ke frontend."""
+def _should_report_pages(progress, page_list):
     try:
-        last_pages = _progress_state.get(progress)
+        last_reported_pages = _progress_state.get(progress)
     except TypeError:
         return True
 
-    if last_pages is not None and pages - last_pages < PROGRESS_PAGE_STEP:
+    if last_reported_pages is not None and page_list - last_reported_pages < PROGRESS_PAGE_STEP:
         return False
 
     try:
-        _progress_state[progress] = pages
+        _progress_state[progress] = page_list
     except TypeError:
         pass
 
     return True
 
 
-def _report(progress, percent, message):
-    """Panggil callback progress jika pemanggil menyediakannya.
-
-    Pesan "Halaman X dari Y" di-throttle agar hanya terkirim saat kemajuan
-    halaman melewati ``PROGRESS_PAGE_STEP``, sementara pesan fase/error lain
-    tetap selalu terkirim.
-    """
+def _report_progress(progress, percent, message):
     if progress is None:
         return
 
-    match = _PAGE_STATUS_RE.match(message) if message else None
+    matched_pattern = _PAGE_STATUS_PATTERN.match(message) if message else None
 
-    if match and not _should_report_pages(progress, int(match.group(1))):
+    if matched_pattern and not _should_report_pages(progress, int(matched_pattern.group(1))):
         return
 
     progress(percent, message)
@@ -848,7 +785,6 @@ PREVIEW_PDF_TABLE_ROWS = 5
 
 
 def preview_csv_file(path):
-    """Buat ringkasan CSV: jumlah baris/kolom, header, dan sampel baris."""
     dataframe = _read_csv(path)
 
     if dataframe.empty:
@@ -869,7 +805,6 @@ PREVIEW_TIMED_PAGES = 5
 
 
 def preview_pdf_file(path):
-    """Buat ringkasan PDF: jumlah halaman, sampel baris tabel, dan estimasi durasi."""
     strategy = _detect_pdf_strategy(path)
     lines_mode = strategy == "lines"
     document = pdfplumber.open(path) if lines_mode else _open_text_document(path)
@@ -884,9 +819,9 @@ def preview_pdf_file(path):
 
         sample_rows = []
         if lines_mode:
-            preview = first_page.extract_tables(PDF_TABLE_SETTINGS)
-            if preview:
-                for row in preview[0][:PREVIEW_PDF_TABLE_ROWS]:
+            preview_tables = first_page.extract_tables(PDF_TABLE_SETTINGS)
+            if preview_tables:
+                for row in preview_tables[0][:PREVIEW_PDF_TABLE_ROWS]:
                     sample_rows.append(
                         [(cell or "").strip() if cell else "" for cell in row]
                     )
@@ -927,12 +862,10 @@ def preview_pdf_file(path):
 
 
 def _json_rows(row):
-    """Konversi satu baris data menjadi list nilai yang aman untuk JSON."""
     return [_json_value(value) for value in row]
 
 
 def _json_value(value):
-    """Normalisasi nilai pandas/numpy agar bisa dikirim lewat JSON."""
     if value is None:
         return None
 
@@ -952,7 +885,6 @@ def _json_value(value):
 
 
 def _read_csv(input_path):
-    """Baca CSV dengan parser khusus transaksi terlebih dahulu, lalu parser umum."""
     table = _read_transaction_csv(input_path)
     if table is not None:
         return table
@@ -961,34 +893,32 @@ def _read_csv(input_path):
 
 
 def _read_generic_csv(input_path):
-    """Baca CSV umum dengan deteksi delimiter dan fallback encoding latin-1."""
     if not _has_content(input_path):
-        return pd.DataFrame()
+        return pandas.DataFrame()
 
     delimiter = _sniff_delimiter(input_path)
 
     if delimiter is not None:
         try:
-            return pd.read_csv(input_path, sep=delimiter, engine="c")
+            return pandas.read_csv(input_path, sep=delimiter, engine="c")
         except Exception:
             try:
-                return pd.read_csv(input_path, sep=delimiter, engine="c", encoding="latin-1")
+                return pandas.read_csv(input_path, sep=delimiter, engine="c", encoding="latin-1")
             except Exception:
                 pass
 
     try:
-        return pd.read_csv(input_path, sep=None, engine="python")
+        return pandas.read_csv(input_path, sep=None, engine="python")
     except UnicodeDecodeError:
-        return pd.read_csv(input_path, sep=None, engine="python", encoding="latin-1")
+        return pandas.read_csv(input_path, sep=None, engine="python", encoding="latin-1")
 
 
 def _has_content(input_path):
-    """Cek apakah file berisi karakter non-whitespace sebelum dibaca pandas."""
     whitespace = b"\x00\r\n\t "
     try:
-        with open(input_path, "rb") as file:
+        with open(input_path, "rb") as file_handle:
             while True:
-                chunk = file.read(65536)
+                chunk = file_handle.read(65536)
 
                 if not chunk:
                     return False
@@ -1000,10 +930,9 @@ def _has_content(input_path):
 
 
 def _sniff_delimiter(input_path):
-    """Deteksi delimiter koma atau titik koma dari sampel awal file."""
     try:
-        with open(input_path, "rb") as file:
-            sample = file.read(8192)
+        with open(input_path, "rb") as file_handle:
+            sample = file_handle.read(8192)
     except OSError:
         return None
 
@@ -1041,17 +970,16 @@ def _sniff_delimiter(input_path):
 
 
 def _count_unquoted(line, character):
-    """Hitung separator di luar tanda kutip agar CSV quoted tidak salah deteksi."""
     count = 0
     in_quotes = False
     index = 0
-    length = len(line)
+    line_length = len(line)
 
-    while index < length:
+    while index < line_length:
         current = line[index]
 
         if current == '"':
-            if in_quotes and index + 1 < length and line[index + 1] == '"':
+            if in_quotes and index + 1 < line_length and line[index + 1] == '"':
                 index += 2
                 continue
 
@@ -1065,7 +993,6 @@ def _count_unquoted(line, character):
 
 
 def _read_transaction_csv(input_path):
-    """Baca CSV laporan transaksi yang punya metadata sebelum header tabel utama."""
     lines = _read_text_lines(input_path)
 
     if not lines:
@@ -1089,15 +1016,14 @@ def _read_transaction_csv(input_path):
         if any(cell.strip() for cell in row):
             rows.append(row)
 
-    return pd.DataFrame(rows, columns=columns)
+    return pandas.DataFrame(rows, columns=columns)
 
 
 def _read_text_lines(input_path):
-    """Baca seluruh file teks dengan encoding UTF-8 BOM atau latin-1."""
     for encoding in ("utf-8-sig", "latin-1"):
         try:
-            with open(input_path, encoding=encoding, newline="") as file:
-                return file.read().splitlines()
+            with open(input_path, encoding=encoding, newline="") as file_handle:
+                return file_handle.read().splitlines()
         except UnicodeDecodeError:
             continue
 
@@ -1105,7 +1031,6 @@ def _read_text_lines(input_path):
 
 
 def _find_transaction_header(lines):
-    """Cari baris header transaksi berdasarkan kolom kunci seperti tanggal/keterangan."""
     for index, line in enumerate(lines):
         for delimiter in (",", ";"):
             columns = next(csv.reader([line], delimiter=delimiter))
@@ -1118,7 +1043,6 @@ def _find_transaction_header(lines):
 
 
 def _fit_csv_row(row, column_count):
-    """Sesuaikan jumlah kolom CSV, termasuk menggabungkan deskripsi yang terpecah."""
     row = [cell.strip() for cell in row]
 
     if len(row) == column_count:
@@ -1133,7 +1057,6 @@ def _fit_csv_row(row, column_count):
 
 
 def _clean_table(table):
-    """Buang baris kosong dan rapikan spasi sel hasil ekstraksi PDF."""
     cleaned_rows = []
 
     for row in table:
@@ -1148,7 +1071,6 @@ def _clean_table(table):
 
 
 class _RowBuilder:
-    """Gabungkan tabel PDF secara streaming tanpa menyimpan seluruh tabel di memori."""
 
     def __init__(self):
         self.header = None
@@ -1169,7 +1091,6 @@ class _RowBuilder:
 
 
 def _append_table_without_duplicate_header(table, header, rows):
-    """Gabungkan tabel PDF (in-place) sambil menghindari header berulang tiap halaman."""
     current_header = table[0]
 
     if header is None:
@@ -1185,17 +1106,14 @@ def _append_table_without_duplicate_header(table, header, rows):
 
 
 def _same_row(first_row, second_row):
-    """Bandingkan dua baris setelah case dan spasi dinormalisasi."""
     return _normalize_row(first_row) == _normalize_row(second_row)
 
 
 def _normalize_row(row):
-    """Ubah baris menjadi bentuk pembanding yang lowercase dan satu spasi."""
     return [" ".join(cell.lower().split()) for cell in row]
 
 
 def _normalize_table(table):
-    """Samakan panjang semua baris tabel agar bisa dibuat DataFrame (in-place)."""
     max_columns = max(len(row) for row in table)
 
     for row in table:
@@ -1214,42 +1132,38 @@ _TOKEN_SEPARATOR = re.compile(r"[\n\r\t ]")
 
 
 def _normalize_nominal_values(dataframe):
-    """Konversi kolom nominal ke angka tanpa mengubah kolom yang terlihat seperti ID."""
     for column in dataframe.columns:
-        series = dataframe[column]
+        column_series = dataframe[column]
 
-        if _has_identifier_value(series):
+        if _has_identifier_value(column_series):
             continue
 
-        dataframe[column] = _normalize_nominal_column(series)
+        dataframe[column] = _normalize_nominal_column(column_series)
 
     return dataframe
 
 
-def _has_identifier_value(series):
-    """Deteksi kolom berisi nomor identitas/rekening agar tidak diperlakukan angka nominal."""
-    cleaned = _clean_series_token(series)
+def _has_identifier_value(column_series):
+    cleaned_series = _clean_series_token(column_series)
     return bool(
-        cleaned.str.fullmatch(_IDENTIFIER_PLAIN.pattern, na=False).any()
-        or cleaned.str.fullmatch(_IDENTIFIER_GROUPED.pattern, na=False).any()
+        cleaned_series.str.fullmatch(_IDENTIFIER_PLAIN.pattern, na=False).any()
+        or cleaned_series.str.fullmatch(_IDENTIFIER_GROUPED.pattern, na=False).any()
     )
 
 
-def _clean_series_token(series):
-    """Bersihkan token kolom dari whitespace dan tanda debit/kredit untuk analisis angka."""
-    cleaned = series.map(lambda value: "" if value is None else str(value))
-    cleaned = cleaned.str.strip().str.replace(_TOKEN_SEPARATOR.pattern, "", regex=True).str.rstrip("CDcd")
-    return cleaned.mask(cleaned.isin(["-", "--", ".", ","]), "")
+def _clean_series_token(column_series):
+    cleaned_series = column_series.map(lambda value: "" if value is None else str(value))
+    cleaned_series = cleaned_series.str.strip().str.replace(_TOKEN_SEPARATOR.pattern, "", regex=True).str.rstrip("CDcd")
+    return cleaned_series.mask(cleaned_series.isin(["-", "--", ".", ","]), "")
 
 
-def _normalize_nominal_column(series):
-    """Normalisasi satu kolom nilai nominal sambil mempertahankan nilai non-angka."""
-    values = series.tolist()
-    cleaned = _clean_series_token(series).tolist()
+def _normalize_nominal_column(column_series):
+    values = column_series.tolist()
+    cleaned_series = _clean_series_token(column_series).tolist()
     result = []
 
     for index, value in enumerate(values):
-        token = cleaned[index]
+        token = cleaned_series[index]
 
         if _SIMPLE_INTEGER.fullmatch(token):
             number = _to_simple_integer(token)
@@ -1261,7 +1175,6 @@ def _normalize_nominal_column(series):
 
 
 def _to_simple_integer(token):
-    """Konversi token integer sederhana, kembalikan None jika tidak valid."""
     try:
         return int(token)
     except (ValueError, TypeError):
@@ -1269,7 +1182,6 @@ def _to_simple_integer(token):
 
 
 def _normalize_cell(value):
-    """Konversi satu sel nominal ke int/float jika formatnya dapat dikenali."""
     if value is None:
         return None
 
@@ -1283,7 +1195,6 @@ def _normalize_cell(value):
 
 
 def _clean_number_token(value):
-    """Rapikan teks angka dari spasi, newline, dan suffix CD sebelum parsing."""
     token = str(value).strip()
     token = token.replace("\n", " ").replace("\r", " ").replace("\t", " ")
     token = token.replace(" ", "")
@@ -1296,16 +1207,15 @@ def _clean_number_token(value):
 
 
 def _to_number(value):
-    """Parse format angka Indonesia/umum menjadi int atau float."""
     token = _clean_number_token(value)
 
     if not token:
         return None
 
-    lowered = token.lower()
+    lowered_token = token.lower()
 
-    if "e" in lowered:
-        mantissa, _, exponent = lowered.partition("e")
+    if "e" in lowered_token:
+        mantissa, separator, exponent = lowered_token.partition("e")
 
         try:
             return _to_integral(Decimal(mantissa) * (Decimal(10) ** int(exponent)))
@@ -1324,6 +1234,5 @@ def _to_number(value):
 
 
 def _to_integral(number):
-    """Kembalikan int jika Decimal bulat, selain itu float."""
     integral = number.to_integral_value()
     return int(integral) if number == integral else float(number)

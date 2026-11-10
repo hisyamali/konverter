@@ -1,6 +1,5 @@
-"""Konfigurasi logging Laravel-style dengan rotasi harian, timezone Asia/Jakarta."""
-
 import json
+import importlib
 import logging
 import logging.config
 import logging.handlers
@@ -12,13 +11,12 @@ from pathlib import Path
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
-    from backports.zoneinfo import ZoneInfo
+    ZoneInfo = importlib.import_module("backports.zoneinfo").ZoneInfo
 
 JAKARTA_TZ = ZoneInfo("Asia/Jakarta")
 
 
 class LaravelFormatter(logging.Formatter):
-    """Formatter mirip Laravel: [Y-m-d H:i:s] channel.LEVEL: message {json_context}"""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -26,40 +24,39 @@ class LaravelFormatter(logging.Formatter):
         self.default_msec_format = "%s,%03d"
 
     def formatTime(self, record, datefmt=None):
-        dt = datetime.fromtimestamp(record.created, JAKARTA_TZ)
+        datetime_value = datetime.fromtimestamp(record.created, JAKARTA_TZ)
         if datefmt:
-            return dt.strftime(datefmt)
-        return dt.strftime(self.default_time_format)
+            return datetime_value.strftime(datefmt)
+        return datetime_value.strftime(self.default_time_format)
 
     def format(self, record):
-        ts = self.formatTime(record, self.datefmt)
+        timestamp = self.formatTime(record, self.datefmt)
         channel = getattr(record, "channel", "app")
         level = record.levelname
-        msg = record.getMessage()
+        message = record.getMessage()
 
-        ctx = getattr(record, "context", None)
-        if ctx is not None:
+        context = getattr(record, "context", None)
+        if context is not None:
             try:
-                ctx_str = " " + json.dumps(ctx, ensure_ascii=False, separators=(",", ":"))
+                context_text = " " + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
             except (TypeError, ValueError):
-                ctx_str = " " + str(ctx)
+                context_text = " " + str(context)
         else:
-            ctx_str = ""
+            context_text = ""
 
-        line = f"[{ts}] {channel}.{level}: {msg}{ctx_str}"
+        line = f"[{timestamp}] {channel}.{level}: {message}{context_text}"
 
         if record.exc_info:
-            trace = self.formatException(record.exc_info).rstrip()
-            line = line + " | " + trace.replace("\n", "\\n")
+            traceback_text = self.formatException(record.exc_info).rstrip()
+            line = line + " | " + traceback_text.replace("\n", "\\n")
         elif record.stack_info:
-            stack = self.formatStack(record.stack_info).rstrip()
-            line = line + " | " + stack.replace("\n", "\\n")
+            stack_text = self.formatStack(record.stack_info).rstrip()
+            line = line + " | " + stack_text.replace("\n", "\\n")
 
         return line
 
 
 def configure_logging(app):
-    """Konfigurasi logging untuk aplikasi Flask."""
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
     max_files = int(os.environ.get("LOG_MAX_FILES", "30"))
     log_channel = os.environ.get("LOG_CHANNEL", "stack").lower()
@@ -135,5 +132,4 @@ def configure_logging(app):
 
 
 def get_logger(name="app"):
-    """Ambil logger instance."""
     return logging.getLogger(name)

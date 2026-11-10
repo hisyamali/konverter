@@ -1,13 +1,10 @@
-"""Perhitungan progress dan ETA konversi yang dipakai bersama Flask dan Streamlit."""
-
 import re
 import time
 
-_PAGE_PROGRESS_RE = re.compile(r"Halaman (\d+) dari halaman (\d+)")
+_PAGE_PROGRESS_PATTERN = re.compile(r"Halaman (\d+) dari halaman (\d+)")
 
 
 def format_interval(seconds):
-    """Ubah detik menjadi teks durasi ringkas berbahasa Indonesia."""
     total_seconds = max(1, int(round(seconds)))
 
     if total_seconds < 60:
@@ -23,7 +20,6 @@ def format_interval(seconds):
 
 
 def _phase_key(message):
-    """Kelompokkan pesan progress ke fase besar untuk perhitungan ETA yang stabil."""
     if not message:
         return None
 
@@ -40,40 +36,34 @@ def _phase_key(message):
 
 
 def _estimate_eta(percent, elapsed, message, state):
-    """Hitung sisa waktu berdasarkan halaman PDF atau kenaikan persentase fase."""
     if percent <= 0 or percent >= 100:
         return None
 
     remaining = None
-    match = _PAGE_PROGRESS_RE.match(message) if message else None
+    page_match = _PAGE_PROGRESS_PATTERN.match(message) if message else None
 
-    if match:
-        pages_read = int(match.group(1))
-        total_pages = int(match.group(2))
+    if page_match:
+        pages_read = int(page_match.group(1))
+        total_pages = int(page_match.group(2))
 
         if pages_read > 0:
             remaining = elapsed * (total_pages - pages_read) / pages_read
 
     if remaining is None:
-        phase_elapsed = max(elapsed - state["phase_started"], 0.001)
-        span = max(percent - state["phase_percent"], 1)
-        remaining = phase_elapsed * (100 - percent) / span
+        phase_elapsed_seconds = max(elapsed - state["phase_started"], 0.001)
+        percent_span = max(percent - state["phase_percent"], 1)
+        remaining = phase_elapsed_seconds * (100 - percent) / percent_span
 
-    previous = state["eta"]
+    previous_eta = state["eta"]
 
-    if previous is None:
+    if previous_eta is None:
         return int(max(remaining, 0))
 
-    alpha = 0.7 if remaining >= previous else 0.5
-    return int(round(max(alpha * previous + (1 - alpha) * remaining, 0)))
+    smoothing_factor = 0.7 if remaining >= previous_eta else 0.5
+    return int(round(max(smoothing_factor * previous_eta + (1 - smoothing_factor) * remaining, 0)))
 
 
 class ProgressReporter:
-    """Callback progress yang menghitung ETA dari pesan dan waktu berjalan.
-
-    ``on_update(percent, message, eta_seconds, elapsed_seconds)`` dipanggil tiap
-    update, dan ``on_phase(phase, percent)`` dipanggil saat fase berubah.
-    """
 
     def __init__(self, on_update, on_phase=None, clock=time.monotonic):
         self._on_update = on_update

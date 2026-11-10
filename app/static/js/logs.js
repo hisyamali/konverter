@@ -28,17 +28,17 @@ function initLogsViewer() {
 function bindEvents() {
     const form = document.getElementById('filter-form');
     if (form) {
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
             applyFilters();
         });
     }
 
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
-        searchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
+        searchInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
                 applyFilters();
             }
         });
@@ -107,8 +107,8 @@ async function fetchLogLines() {
 
         renderLogLines(data.lines || []);
         updateStatus(data.total, (data.lines || []).length);
-    } catch (err) {
-        console.error('Fetch log error:', err);
+    } catch (error) {
+        console.error('Fetch log error:', error);
         updateStatus('Error loading logs', 0);
     } finally {
         logsState.loading = false;

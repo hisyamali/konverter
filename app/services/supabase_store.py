@@ -1,25 +1,11 @@
-"""Integrasi Supabase untuk varian Streamlit: Auth, tabel ``jobs``, dan Storage.
-
-Alur iLovePDF-style memakai modul ini untuk tiga hal:
-
-1. **Auth** opsional (email + password). Tanpa login aplikasi tetap bisa
-   mengonversi (mode tamu, file hanya diproses sementara lalu dihapus).
-2. **Riwayat**: metadata pekerjaan disimpan di tabel ``public.jobs``.
-3. **Penyimpanan privat**: file sumber dan hasil ``.xlsx`` di bucket privat
-   ``sources`` / ``results``; akses hanya lewat *signed URL* milik pemiliknya.
-
-Semua operasi defensif: bila Supabase belum dikonfigurasi atau terjadi
-kesalahan jaringan, aplikasi tetap jalan sebagai mode tamu.
-"""
-
 import os
 import re
 from typing import Optional
 
 try:
-    import streamlit as st
+    import streamlit
 except ImportError:
-    st = None
+    streamlit = None
 
 try:
     from supabase import Client, create_client
@@ -37,20 +23,18 @@ _USER_KEY = "_sb_user"
 
 
 def _secrets_section() -> dict:
-    """Baca blok ``[supabase]`` dari ``st.secrets`` tanpa gagal bila belum ada."""
-    if st is None:
+    if streamlit is None:
         return {}
 
     try:
-        section = st.secrets.get("supabase")
+        section = streamlit.secrets.get("supabase")
     except Exception:
         return {}
 
     return dict(section) if section else {}
 
 
-def _pick(secret_value, env_name: str) -> str:
-    """Ambil dari secrets; bila kosong/placeholder, jatuh ke variabel lingkungan."""
+def _pick_secret_value(secret_value, env_name: str) -> str:
     value = secret_value.strip() if isinstance(secret_value, str) else ""
 
     if value and "<" not in value:
@@ -60,16 +44,14 @@ def _pick(secret_value, env_name: str) -> str:
 
 
 def _config() -> dict:
-    """Gabungkan konfigurasi dari ``st.secrets`` (diutamakan) dan env var."""
     secrets = _secrets_section()
     return {
-        "url": _pick(secrets.get("url"), "SUPABASE_URL"),
-        "anon_key": _pick(secrets.get("anon_key"), "SUPABASE_ANON_KEY"),
+        "url": _pick_secret_value(secrets.get("url"), "SUPABASE_URL"),
+        "anon_key": _pick_secret_value(secrets.get("anon_key"), "SUPABASE_ANON_KEY"),
     }
 
 
 def is_configured() -> bool:
-    """True bila URL dan anon key Supabase sudah diisi (bukan placeholder)."""
     if create_client is None:
         return False
 
@@ -81,11 +63,10 @@ def is_configured() -> bool:
 
 
 def get_client() -> Optional["Client"]:
-    """Klien Supabase **per sesi** (tidak dibagikan antar pengguna)."""
-    if not is_configured() or st is None:
+    if not is_configured() or streamlit is None:
         return None
 
-    client = st.session_state.get(_CLIENT_KEY)
+    client = streamlit.session_state.get(_CLIENT_KEY)
 
     if client is None:
         config = _config()
@@ -94,15 +75,14 @@ def get_client() -> Optional["Client"]:
         except Exception:
             return None
 
-        st.session_state[_CLIENT_KEY] = client
+        streamlit.session_state[_CLIENT_KEY] = client
         _restore_session(client)
 
     return client
 
 
 def _restore_session(client) -> None:
-    """Terapkan kembali token sesi ke klien baru (bertahan antar rerun)."""
-    session = st.session_state.get(_SESSION_KEY)
+    session = streamlit.session_state.get(_SESSION_KEY)
 
     if not session:
         return
@@ -110,34 +90,32 @@ def _restore_session(client) -> None:
     try:
         client.auth.set_session(session["access_token"], session["refresh_token"])
     except Exception:
-        st.session_state.pop(_SESSION_KEY, None)
-        st.session_state.pop(_USER_KEY, None)
+        streamlit.session_state.pop(_SESSION_KEY, None)
+        streamlit.session_state.pop(_USER_KEY, None)
 
 
 def _remember_user(user) -> dict:
-    """Simpan ringkasan pengguna + token sesi di session_state."""
-    info = {"id": user.id, "email": getattr(user, "email", "") or ""}
-    st.session_state[_USER_KEY] = info
+    user_info = {"id": user.id, "email": getattr(user, "email", "") or ""}
+    streamlit.session_state[_USER_KEY] = user_info
 
     try:
         session = client_session()
         if session:
-            st.session_state[_SESSION_KEY] = {
+            streamlit.session_state[_SESSION_KEY] = {
                 "access_token": session.access_token,
                 "refresh_token": session.refresh_token,
             }
     except Exception:
         pass
 
-    return info
+    return user_info
 
 
 _client_for_session = None
 
 
 def client_session():
-    """Ambil objek sesi aktif dari klien di session_state (tanpa jaringan)."""
-    client = st.session_state.get(_CLIENT_KEY)
+    client = streamlit.session_state.get(_CLIENT_KEY)
 
     if client is None:
         return None
@@ -149,15 +127,13 @@ def client_session():
 
 
 def current_user() -> Optional[dict]:
-    """Ringkasan pengguna yang login, atau None untuk mode tamu."""
-    if st is None:
+    if streamlit is None:
         return None
 
-    return st.session_state.get(_USER_KEY)
+    return streamlit.session_state.get(_USER_KEY)
 
 
 def sign_up(email: str, password: str) -> dict:
-    """Daftarkan akun baru. Bila konfirmasi email aktif, sesi belum terbuat."""
     client = get_client()
 
     if client is None:
@@ -173,7 +149,6 @@ def sign_up(email: str, password: str) -> dict:
 
 
 def sign_in(email: str, password: str) -> dict:
-    """Masuk dengan email + password."""
     client = get_client()
 
     if client is None:
@@ -184,11 +159,10 @@ def sign_in(email: str, password: str) -> dict:
 
 
 def sign_out() -> None:
-    """Keluar dan buang klien + token dari sesi."""
-    if st is None:
+    if streamlit is None:
         return
 
-    client = st.session_state.get(_CLIENT_KEY)
+    client = streamlit.session_state.get(_CLIENT_KEY)
 
     if client is not None:
         try:
@@ -196,24 +170,21 @@ def sign_out() -> None:
         except Exception:
             pass
 
-    for key in (_CLIENT_KEY, _SESSION_KEY, _USER_KEY):
-        st.session_state.pop(key, None)
+    for session_key in (_CLIENT_KEY, _SESSION_KEY, _USER_KEY):
+        streamlit.session_state.pop(session_key, None)
 
 
 def _safe_name(name: str) -> str:
-    """Bersihkan nama file agar aman dipakai sebagai objek storage."""
-    base = os.path.basename(name or "file")
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._") or "file"
-    return cleaned[:120]
+    base_name = os.path.basename(name or "file")
+    cleaned_name = re.sub(r"[^A-Za-z0-9._-]+", "_", base_name).strip("._") or "file"
+    return cleaned_name[:120]
 
 
 def object_path(user_id: str, job_id: str, filename: str) -> str:
-    """Konvensi path: ``<user_id>/<job_id>/<filename>`` (dipakai kebijakan RLS)."""
     return f"{user_id}/{job_id}/{_safe_name(filename)}"
 
 
 def upload_file(bucket: str, path: str, data: bytes, content_type: str) -> None:
-    """Unggah byte ke bucket (upsert agar aman diulang)."""
     client = get_client()
 
     if client is None:
@@ -227,25 +198,23 @@ def upload_file(bucket: str, path: str, data: bytes, content_type: str) -> None:
 
 
 def signed_url(bucket: str, path: str, expires: int = SIGNED_URL_TTL) -> Optional[str]:
-    """Buat signed URL sementara untuk objek privat."""
     client = get_client()
 
     if client is None:
         return None
 
     try:
-        result = client.storage.from_(bucket).create_signed_url(path, expires)
+        signed_url_result = client.storage.from_(bucket).create_signed_url(path, expires)
     except Exception:
         return None
 
-    if isinstance(result, dict):
-        return result.get("signedURL") or result.get("signedUrl")
+    if isinstance(signed_url_result, dict):
+        return signed_url_result.get("signedURL") or signed_url_result.get("signedUrl")
 
-    return getattr(result, "signed_url", None)
+    return getattr(signed_url_result, "signed_url", None)
 
 
 def remove_objects(bucket: str, paths) -> None:
-    """Hapus objek dari bucket (abaikan bila gagal)."""
     client = get_client()
 
     if client is None or not paths:
@@ -259,7 +228,6 @@ def remove_objects(bucket: str, paths) -> None:
 
 def create_job(user_id: str, conversion_type: str, original_name: str, source_size: int,
                source_path: Optional[str]) -> Optional[str]:
-    """Sisipkan baris pekerjaan berstatus ``processing``; kembalikan id-nya."""
     client = get_client()
 
     if client is None:
@@ -281,28 +249,26 @@ def create_job(user_id: str, conversion_type: str, original_name: str, source_si
     except Exception:
         return None
 
-    rows = getattr(response, "data", None) or []
-    return rows[0]["id"] if rows else None
+    row_list = getattr(response, "data", None) or []
+    return row_list[0]["id"] if row_list else None
 
 
 def finish_job(job_id: Optional[str], status: str, **fields) -> None:
-    """Perbarui status + metadata pekerjaan (``completed`` / ``failed``)."""
     client = get_client()
 
     if client is None or not job_id:
         return
 
-    payload = dict(fields)
-    payload["status"] = status
+    update_payload = dict(fields)
+    update_payload["status"] = status
 
     try:
-        client.table("jobs").update(payload).eq("id", job_id).execute()
+        client.table("jobs").update(update_payload).eq("id", job_id).execute()
     except Exception:
         pass
 
 
 def list_jobs(user_id: str, limit: int = 50) -> list:
-    """Ambil riwayat pekerjaan terbaru milik pengguna."""
     client = get_client()
 
     if client is None:
@@ -324,7 +290,6 @@ def list_jobs(user_id: str, limit: int = 50) -> list:
 
 
 def delete_job(user_id: str, job: dict) -> None:
-    """Hapus berkas sumber/hasil lalu baris pekerjaan milik pengguna."""
     client = get_client()
 
     if client is None:
