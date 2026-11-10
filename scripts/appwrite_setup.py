@@ -42,7 +42,7 @@ try:
     from appwrite.role import Role
     from appwrite.services.storage import Storage
     from appwrite.services.tables_db import TablesDB
-except ImportError:  # pragma: no cover - dipakai manual
+except ImportError:
     print("Paket 'appwrite' belum terpasang. Jalankan: pip install -r requirements.txt")
     raise SystemExit(1)
 
@@ -53,13 +53,9 @@ DEFAULT_TABLE = "jobs"
 DEFAULT_TABLE_NAME = "Jobs"
 DEFAULT_SOURCES = "sources"
 DEFAULT_RESULTS = "results"
-# Appwrite mengukur maximumFileSize dalam BYTES dan plan Free membatasinya
-# maksimum 50.000.000 (50 MB desimal). Nilai 50*1024*1024 = 52.428.800 justru
-# ditolak: "Value must be a valid range between 1 and 50,000,000".
 MAX_FILE_BYTES = 50_000_000
 ALLOWED_EXTENSIONS = ["pdf", "csv", "xlsx"]
 
-# Kolom table `jobs` (mengikuti skema Supabase agar UI sama untuk kedua backend).
 COLUMNS = [
     {"key": "user_id", "type": "varchar", "size": 36, "required": True},
     {"key": "conversion_type", "type": "varchar", "size": 32, "required": True},
@@ -69,7 +65,6 @@ COLUMNS = [
     {"key": "result_name", "type": "varchar", "size": 255, "required": False},
     {"key": "result_path", "type": "varchar", "size": 512, "required": False},
     {"key": "output_size_bytes", "type": "bigint", "required": False},
-    # Appwrite tidak mengizinkan kolom wajib punya default -> required=False.
     {"key": "status", "type": "varchar", "size": 16, "required": False, "default": "processing"},
     {"key": "error", "type": "text", "required": False},
     {"key": "page_count", "type": "integer", "required": False},
@@ -83,13 +78,10 @@ INDEXES = [
         "key": "user_created",
         "type": "key",
         "attributes": ["user_id", "created_at"],
-        # REST API create_table menerima string huruf besar: 'ASC' / 'DESC'.
         "orders": ["ASC", "DESC"],
     },
 ]
 
-# Teks pesan Appwrite yang menandakan kuota plan habis. Sengaja spesifik:
-# kata "limit" saja juga muncul di pesan lain (mis. batas ukuran file).
 QUOTA_MARKERS = (
     "maximum number of",
     "has reached the limit",
@@ -98,16 +90,10 @@ QUOTA_MARKERS = (
     "plan limit",
 )
 
-# Table hanya boleh *dibuat baris* oleh user login. Izin baca/ubah/hapus
-# diberikan per baris (Role.user) oleh adapter, sehingga data tiap pengguna
-# terisolasi dan tidak bisa dibaca pengguna lain.
 TABLE_PERMISSIONS = [Permission.create(Role.users())]
 BUCKET_PERMISSIONS = [Permission.create(Role.users())]
 
 
-# ---------------------------------------------------------------------------
-# Bantuan error
-# ---------------------------------------------------------------------------
 def _message(exc: Exception) -> str:
     """Teks pesan error Appwrite (fallback ke str)."""
     return str(getattr(exc, "message", None) or exc or "")
@@ -163,9 +149,6 @@ def _ensure(action: str, callback):
         raise
 
 
-# ---------------------------------------------------------------------------
-# Table: kolom + index
-# ---------------------------------------------------------------------------
 def _create_column(tables: TablesDB, database_id: str, table_id: str, column: dict):
     """Buat satu kolom sesuai tipe di ``COLUMNS``."""
     key = column["key"]
@@ -230,9 +213,6 @@ def _ensure_indexes(tables: TablesDB, database_id: str, table_id: str) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# Storage: bucket
-# ---------------------------------------------------------------------------
 def _bucket_diffs(bucket) -> list:
     """Daftar pengaturan bucket yang tidak sesuai kebutuhan aplikasi."""
     diffs = []
@@ -309,9 +289,6 @@ def _ensure_bucket(storage: Storage, bucket_id: str, name: str) -> bool:
     return True
 
 
-# ---------------------------------------------------------------------------
-# Setup
-# ---------------------------------------------------------------------------
 def build_client(endpoint: str, project_id: str, api_key: str):
     client = Client()
     client.set_endpoint(endpoint)
@@ -353,7 +330,6 @@ def setup(database_id: str, table_id: str, sources_id: str, results_id: str,
             ),
         )
 
-    # Table bisa saja sudah ada tanpa kolom/index lengkap (mis. dibuat manual).
     _ensure_columns(tables, database_id, table_id)
     _ensure_indexes(tables, database_id, table_id)
 
@@ -377,9 +353,6 @@ def setup(database_id: str, table_id: str, sources_id: str, results_id: str,
     return sources_id
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Setup Appwrite untuk Konverter")
     parser.add_argument("--endpoint", default=os.environ.get("APPWRITE_ENDPOINT", DEFAULT_ENDPOINT))

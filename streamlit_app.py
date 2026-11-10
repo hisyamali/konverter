@@ -25,7 +25,6 @@ EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSS_PATH = Path(__file__).parent / "app" / "static" / "css" / "streamlit.css"
 TAILWIND_CSS_PATH = Path(__file__).parent / "app" / "static" / "css" / "tailwind-streamlit.css"
 
-# Batas ukuran unggahan: tamu (tanpa login) vs pengguna yang login.
 GUEST_MAX_MB = int(os.environ.get("KONVERTER_GUEST_MAX_UPLOAD_MB", "10") or "10")
 USER_MAX_MB = int(os.environ.get("KONVERTER_USER_MAX_UPLOAD_MB", "50") or "50")
 
@@ -35,8 +34,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Tailwind (utility) dimuat lebih dulu; streamlit.css menjadi jembatan yang
-# menyetel elemen milik Streamlit sendiri (widget, container ber-key, chrome).
 if TAILWIND_CSS_PATH.exists():
     st.markdown(
         f"<style>{TAILWIND_CSS_PATH.read_text(encoding='utf-8')}</style>",
@@ -47,9 +44,6 @@ if CSS_PATH.exists():
     st.markdown(f"<style>{CSS_PATH.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
-# Helper tampilan
-# ---------------------------------------------------------------------------
 def _esc(value) -> str:
     if value is None:
         return ""
@@ -319,9 +313,6 @@ def _status_label(status: str) -> str:
     }.get(status, status or "-")
 
 
-# ---------------------------------------------------------------------------
-# State upload
-# ---------------------------------------------------------------------------
 def _signature(uploaded) -> str:
     return f"{uploaded.name}:{uploaded.size}:{uploaded.type}"
 
@@ -371,9 +362,6 @@ def _preview(kind: str, path: str, size: int, mtime_ns: int):
     return preview_pdf_file(path)
 
 
-# ---------------------------------------------------------------------------
-# Navigasi halaman (alur ala iLovePDF)
-# ---------------------------------------------------------------------------
 def _go(page: str) -> None:
     st.session_state["kv_page"] = page
     st.rerun()
@@ -457,12 +445,6 @@ def _page_home(user, limit_mb: int) -> None:
 
     st.markdown(_feature_html(), unsafe_allow_html=True)
 
-    # if not sb.is_configured():
-    #     st.caption(
-    #         "Riwayat & login belum dikonfigurasi. Isi blok `[supabase]` (jalankan "
-    #         "`supabase/schema.sql`) atau `[appwrite]` (jalankan `scripts/appwrite_setup.py`) "
-    #         "di `.streamlit/secrets.toml` untuk mengaktifkannya."
-    #     )
 
 def _page_tool(kind: str, user, limit_mb: int) -> None:
     title = "PDF ke Excel" if kind == "pdf-to-excel" else "CSV ke Excel"
@@ -489,7 +471,6 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
             preview_data = None
 
             if uploaded is None:
-                # Tidak ada file: pastikan sisa file sementara dibersihkan.
                 _drop_temp_input()
 
             if uploaded is not None:
@@ -821,9 +802,6 @@ def _render_download(job: dict) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Router
-# ---------------------------------------------------------------------------
 user = sb.current_user()
 
 if user is None and st.session_state.get("kv_page") == "history":

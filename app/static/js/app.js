@@ -1,4 +1,3 @@
-// Menghubungkan elemen form, pratinjau, dan modal progress dari HTML ke logika JavaScript.
 const typeSelect = document.getElementById("conversion_type");
 const fileInput = document.getElementById("file");
 const submitButton = document.getElementById("submit-button");
@@ -30,22 +29,20 @@ const FADE_OUT_DELAY = 700;
 const FAKE_PERCENT_CEILING = 10;
 const FAKE_PROGRESS_INTERVAL_MS = 900;
 
-// Animasi progress: bar mengalir menuju angka server, tidak melompat tiap chunk.
-const PROGRESS_RISE_PER_SECOND = 45;   // kecepatan maksimum bar naik (%/detik)
-const PROGRESS_DRIFT_GAP = 2;          // maksimum bar mendahului angka server terakhir (%)
-const PROGRESS_DRIFT_CEILING = 84;     // plafon fase baca agar tidak meleset jauh
-const PROGRESS_STALL_MS = 1200;        // mulai menyusul setelah server sepi selama ini
-const PROGRESS_HISTORY = 12;           // jumlah update server untuk menaksir laju
+const PROGRESS_RISE_PER_SECOND = 45;
+const PROGRESS_DRIFT_GAP = 2;
+const PROGRESS_DRIFT_CEILING = 84;
+const PROGRESS_STALL_MS = 1200;
+const PROGRESS_HISTORY = 12;
 
-// Menyimpan state sementara selama upload, pratinjau, dan konversi berjalan.
-let currentPercent = 0;      // persen yang sedang digambar (boleh pecahan)
-let targetPercent = 0;       // persen terakhir dari server (atau progress semu)
-let paintedPercent = -1;     // angka bulat terakhir yang ditulis ke label
+let currentPercent = 0;
+let targetPercent = 0;
+let paintedPercent = -1;
 let progressFrame = null;
 let progressFrameAt = 0;
 let progressStalledAt = 0;
 let serverHistory = [];
-let etaAnchor = null;        // {seconds, at} untuk hitung mundur lokal
+let etaAnchor = null;
 let fakeTimer = null;
 let hideTimer = null;
 let previewXhr = null;
@@ -53,7 +50,6 @@ let currentPreviewId = null;
 let lastElapsed = null;
 
 function openOverlay() {
-    // Menampilkan modal progress dan mengatur ulang status proses konversi.
     clearTimeout(hideTimer);
     stopProgressAnimation();
     currentPercent = 0;
@@ -80,7 +76,6 @@ function openOverlay() {
 }
 
 function closeOverlay() {
-    // Menutup modal progress dengan transisi fade-out.
     stopFakeProgress();
     stopProgressAnimation();
     overlay.classList.remove("is-visible");
@@ -90,7 +85,6 @@ function closeOverlay() {
 }
 
 function paintProgress() {
-    // Menggambar bar pada posisi animasi saat ini, tanpa pernah menurunkan nilai.
     const shown = Math.max(0, Math.min(100, Math.round(currentPercent)));
 
     if (shown !== paintedPercent) {
@@ -103,14 +97,12 @@ function paintProgress() {
 }
 
 function renderProgress(percent) {
-    // Menerima target persen baru (server atau progress semu) dan menjalankan animasi.
     const value = Number(percent);
     targetPercent = Math.max(targetPercent, Number.isFinite(value) ? value : 0);
     startProgressAnimation();
 }
 
 function startProgressAnimation() {
-    // Menjalankan loop animasi bar selama modal progress terbuka.
     if (progressFrame !== null) {
         return;
     }
@@ -120,7 +112,6 @@ function startProgressAnimation() {
 }
 
 function stopProgressAnimation() {
-    // Menghentikan loop animasi agar tidak berjalan saat modal tertutup.
     if (progressFrame !== null) {
         cancelAnimationFrame(progressFrame);
         progressFrame = null;
@@ -128,7 +119,6 @@ function stopProgressAnimation() {
 }
 
 function serverRate() {
-    // Menaksir laju progress server (persen per detik) dari beberapa update terakhir.
     if (serverHistory.length < 2) {
         return 0;
     }
@@ -146,7 +136,6 @@ function serverRate() {
 }
 
 function tickProgress(now) {
-    // Menggerakkan bar menuju target: mengejar saat tertinggal, menyusul pelan saat sepi.
     progressFrame = null;
 
     const seconds = progressFrameAt ? Math.min((now - progressFrameAt) / 1000, 0.25) : 0.05;
@@ -176,7 +165,6 @@ function tickProgress(now) {
 }
 
 function paintCountdown(now) {
-    // Menurunkan angka "tersisa" tiap detik dari nilai ETA terakhir server.
     if (etaAnchor === null) {
         return;
     }
@@ -186,7 +174,6 @@ function paintCountdown(now) {
 }
 
 function setStatus(percent, message, etaSeconds, elapsedSeconds) {
-    // Memperbarui pesan proses, estimasi sisa waktu, dan durasi berjalan.
     const numeric = Number(percent);
     const changed = Number.isFinite(numeric) && Math.round(numeric) !== Math.round(targetPercent)
         || (message && message !== messageLabel.textContent);
@@ -245,7 +232,6 @@ function setStatus(percent, message, etaSeconds, elapsedSeconds) {
 }
 
 function formatInterval(seconds) {
-    // Mengubah detik menjadi teks Indonesia yang ringkas untuk ETA/durasi.
     const totalSeconds = Math.max(1, Math.round(seconds));
 
     if (totalSeconds < 60) {
@@ -265,7 +251,6 @@ function formatInterval(seconds) {
 }
 
 function startFakeProgress() {
-    // Memberi umpan balik awal saat server belum mengirim progress sebenarnya.
     stopFakeProgress();
     fakeTimer = setInterval(() => {
         if (Math.round(currentPercent) < FAKE_PERCENT_CEILING) {
@@ -276,7 +261,6 @@ function startFakeProgress() {
 }
 
 function stopFakeProgress() {
-    // Menghentikan progress semu agar tidak bentrok dengan progress server.
     if (fakeTimer !== null) {
         clearInterval(fakeTimer);
         fakeTimer = null;
@@ -284,7 +268,6 @@ function stopFakeProgress() {
 }
 
 function showError(message) {
-    // Menampilkan error konversi dan membuka tombol tutup modal.
     stopFakeProgress();
     stopProgressAnimation();
     etaAnchor = null;
@@ -301,7 +284,6 @@ function showError(message) {
 }
 
 function buildJobId() {
-    // Membuat ID unik untuk menghubungkan request konversi dengan polling progress.
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
         return window.crypto.randomUUID();
     }
@@ -310,7 +292,6 @@ function buildJobId() {
 }
 
 function pollProgress(jobId) {
-    // Meminta status job berkala dari server selama konversi berlangsung.
     const timer = setInterval(async () => {
         try {
             const response = await fetch(`/progress?job_id=${encodeURIComponent(jobId)}`, {
@@ -338,7 +319,6 @@ function pollProgress(jobId) {
 }
 
 function downloadFile(blob, fileName) {
-    // Memicu download hasil Excel dari blob response tanpa reload halaman.
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -350,20 +330,17 @@ function downloadFile(blob, fileName) {
 }
 
 function readFileName(request) {
-    // Mengambil nama file hasil dari header Content-Disposition server.
     const disposition = request.getResponseHeader("Content-Disposition") || "";
     const match = disposition.match(/filename="?([^";]+)"?/i);
     return match ? match[1] : "hasil-konversi.xlsx";
 }
 
 function isSpreadsheet(response) {
-    // Memastikan response sukses benar-benar file Excel atau stream download.
     const contentType = response.getResponseHeader("Content-Type") || "";
     return contentType.includes("spreadsheet") || contentType.includes("octet-stream");
 }
 
 function extractErrorMessage(text, contentType) {
-    // Mengubah response error server menjadi pesan yang aman ditampilkan ke user.
     if (contentType.includes("json")) {
         try {
             const payload = JSON.parse(text);
@@ -384,13 +361,11 @@ function extractErrorMessage(text, contentType) {
 }
 
 function setStepActive(step) {
-    // Menandai langkah aktif pada indikator unggah/pratinjau dan konversi.
     stepUpload.classList.toggle("is-active", step === "upload");
     stepConvert.classList.toggle("is-active", step === "convert");
 }
 
 function formatBytes(bytes) {
-    // Mengubah ukuran byte menjadi B, KB, atau MB untuk metadata pratinjau.
     if (bytes < 1024) {
         return `${bytes} B`;
     }
@@ -403,14 +378,12 @@ function formatBytes(bytes) {
 }
 
 function setPreviewStatus(message, isError) {
-    // Menampilkan status upload/pratinjau, termasuk gaya error bila perlu.
     previewStatus.textContent = message;
     previewStatus.classList.toggle("is-error", Boolean(isError));
     previewStatus.hidden = false;
 }
 
 function clearPreview() {
-    // Mengosongkan pratinjau lama saat file atau jenis konversi berubah.
     currentPreviewId = null;
     previewPanel.hidden = true;
     previewTable.querySelector("colgroup")?.remove();
@@ -425,7 +398,6 @@ function clearPreview() {
 }
 
 function resetInput() {
-    // Mengosongkan input file dan seluruh pratinjau setelah konversi berhasil.
     clearPreview();
     fileInput.value = "";
     previewStatus.hidden = true;
@@ -435,18 +407,15 @@ function resetInput() {
 }
 
 function selectedType() {
-    // Membaca jenis konversi yang sedang dipilih user.
     return typeSelect.value;
 }
 
 function matchesSelectedType(filename) {
-    // Memvalidasi ekstensi file agar sesuai dengan pilihan PDF/CSV.
     const extension = filename.split(".").pop().toLowerCase();
     return selectedType() === "csv-to-excel" ? extension === "csv" : extension === "pdf";
 }
 
 function sendPreview() {
-    // Mengunggah file untuk validasi dan sampel pratinjau sebelum konversi penuh.
     const file = fileInput.files[0];
 
     if (!file) {
@@ -500,7 +469,6 @@ function sendPreview() {
 }
 
 function renderPreview(payload) {
-    // Menggambar metadata dan tabel sampel hasil pratinjau dari server.
     currentPreviewId = payload.preview_id;
 
     if (!payload.filename) {
@@ -547,7 +515,6 @@ function renderPreview(payload) {
 }
 
 function renderCsvPreview(payload) {
-    // Membuat tabel pratinjau CSV dari header asli dan sample_rows.
     renderPreviewTable(payload.headers, payload.sample_rows);
 
     const total = payload.row_count;
@@ -555,7 +522,6 @@ function renderCsvPreview(payload) {
 }
 
 function renderPdfPreview(payload) {
-    // Membuat tabel pratinjau PDF dengan header dari isi file jika baris pertama tampak seperti header.
     const columnCount = Math.max(1, ...payload.sample_rows.map((row) => row.length));
     const normalizedRows = payload.sample_rows.map((row) => fitPreviewRow(row, columnCount));
     const firstRow = normalizedRows[0] || [];
@@ -571,7 +537,6 @@ function renderPdfPreview(payload) {
 }
 
 function renderPreviewTable(headers, rows) {
-    // Renderer tabel bersama untuk CSV/PDF agar jumlah kolom dan lebarnya selalu mengikuti data.
     const columnCount = Math.max(1, headers.length, ...rows.map((row) => row.length));
     const normalizedHeaders = fitPreviewRow(headers, columnCount).map((value, index) => value || `Kolom ${index + 1}`);
     const normalizedRows = rows.map((row) => fitPreviewRow(row, columnCount));
@@ -616,13 +581,11 @@ function renderPreviewTable(headers, rows) {
 }
 
 function fitPreviewRow(row, columnCount) {
-    // Pastikan setiap baris punya jumlah sel sama dengan total kolom tabel.
     const values = Array.from(row || [], (value) => value === null || value === undefined ? "" : String(value));
     return values.concat(Array(Math.max(columnCount - values.length, 0)).fill("")).slice(0, columnCount);
 }
 
 function looksLikeHeaderRow(row, dataRows) {
-    // PDF sering menaruh header sebagai baris pertama hasil ekstraksi; gunakan sebagai header bila cukup tekstual.
     const filledCells = row.filter((value) => value.trim() !== "");
 
     if (filledCells.length < 2 || dataRows.length === 0) {
@@ -635,7 +598,6 @@ function looksLikeHeaderRow(row, dataRows) {
 }
 
 function calculatePreviewColumnWidths(headers, rows) {
-    // Lebar awal kolom dihitung dari isi terpanjang, lalu dibatasi agar tetap mudah dibaca.
     return headers.map((header, columnIndex) => {
         const values = [header, ...rows.map((row) => row[columnIndex] || "")];
         const longest = values.reduce((max, value) => Math.max(max, String(value).length), 0);
@@ -647,7 +609,6 @@ function calculatePreviewColumnWidths(headers, rows) {
 }
 
 function fitPreviewColumnWidths(widths) {
-    // Jika total kolom melebihi card, kecilkan proporsional sampai pas tanpa menghilangkan keterbacaan.
     const cardPadding = 52;
     const measuredWidth = previewTableScroll.clientWidth || Math.max(converterCard.clientWidth - cardPadding, 0);
     const availableWidth = Math.max(measuredWidth, 320);
@@ -683,7 +644,6 @@ function fitPreviewColumnWidths(widths) {
 }
 
 function convertNow() {
-    // Memulai konversi file yang sudah dipratinjau lalu mengunduh hasil Excel.
     if (!currentPreviewId) {
         setPreviewStatus("Unggah file terlebih dahulu untuk melihat pratinjau.", true);
         return;
@@ -733,7 +693,6 @@ function convertNow() {
 }
 
 fileInput.addEventListener("change", () => {
-    // Saat file berubah, batalkan pratinjau berjalan dan buat pratinjau baru.
     if (previewXhr) {
         previewXhr.abort();
         previewXhr = null;
@@ -747,7 +706,6 @@ fileInput.addEventListener("change", () => {
 });
 
 typeSelect.addEventListener("change", () => {
-    // Saat jenis konversi berubah, validasi ulang file yang sudah dipilih.
     if (previewXhr) {
         previewXhr.abort();
         previewXhr = null;
@@ -763,13 +721,11 @@ typeSelect.addEventListener("change", () => {
 submitButton.addEventListener("click", convertNow);
 
 closeButton.addEventListener("click", () => {
-    // Tombol tutup hanya muncul ketika proses gagal dan user perlu menutup modal.
     closeOverlay();
     bar.classList.remove("is-error");
 });
 
 overlay.addEventListener("click", (event) => {
-    // Klik area gelap menutup modal hanya jika proses sudah gagal/selesai ditutup manual.
     if (event.target === overlay && !closeButton.hidden) {
         closeOverlay();
         bar.classList.remove("is-error");

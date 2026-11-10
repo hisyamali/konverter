@@ -1,17 +1,9 @@
-/*
- * Tailwind untuk UI Flask (app/templates).
- * Mengandung preflight penuh, token bersama, dan hook state yang dipakai app.js.
- */
-
 @import "tailwindcss";
 @import "./tailwind.shared.css";
 
 @source "../../templates";
 @source "../js";
 
-/* --- Hook state yang di-toggle app.js/logs.js --- */
-
-/* Overlay progress: transisi fade sebelum is-visible ditambahkan. */
 .loading-overlay {
     opacity: 0;
     transition: opacity 180ms ease;
@@ -21,7 +13,6 @@
     opacity: 1;
 }
 
-/* Stepper aktif (di-toggle app.js/beranda). */
 .step.is-active {
     background-color: #e8efff;
     color: #2a5bd7;
@@ -32,18 +23,15 @@
     color: #ffffff;
 }
 
-/* Progress bar berubah merah saat konversi gagal. */
 .progress-bar.is-error {
     background-image: linear-gradient(90deg, #be123c, #fb7185);
 }
 
-/* Status pratinjau berubah merah saat ada error. */
 .preview-status.is-error {
     background-color: #fff1f2;
     color: #be123c;
 }
 
-/* Warna level log yang disuntik logs.js. */
 .level-error {
     color: #dc3545;
     font-weight: 600;

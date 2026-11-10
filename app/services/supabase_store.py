@@ -18,12 +18,12 @@ from typing import Optional
 
 try:
     import streamlit as st
-except ImportError:  # pragma: no cover - hanya varian Streamlit yang memakai modul ini
+except ImportError:
     st = None
 
 try:
     from supabase import Client, create_client
-except ImportError:  # pragma: no cover - dependensi opsional
+except ImportError:
     Client = None
     create_client = None
 

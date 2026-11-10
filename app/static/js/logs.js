@@ -1,8 +1,3 @@
-/**
- * Logs Viewer JavaScript: AJAX tail, filter, search, auto-refresh
- * Bekerja dengan /logs/api endpoint
- */
-
 let logsState = {
     filename: 'app.log',
     lines: 200,
@@ -55,7 +50,6 @@ function applyFilters() {
     if (!form) return;
 
     const params = new URLSearchParams(new FormData(form));
-    // Checkbox default value is "on"; server understands true/1/on.
     if (params.has('auto')) {
         params.set('auto', 'true');
     } else {
@@ -143,7 +137,6 @@ function escapeHtml(text) {
 }
 
 function highlightLine(line) {
-    // Escape first to prevent log content from being interpreted as HTML.
     return escapeHtml(line)
         .replace(/\b(ERROR|CRITICAL)\b/g, '<span class="level-error">$1</span>')
         .replace(/\b(WARNING)\b/g, '<span class="level-warning">$1</span>')

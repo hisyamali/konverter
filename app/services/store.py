@@ -21,7 +21,7 @@ from typing import Optional
 
 try:
     import streamlit as st
-except ImportError:  # pragma: no cover - hanya varian Streamlit
+except ImportError:
     st = None
 
 from app.services import appwrite_store as _appwrite
@@ -34,9 +34,6 @@ _BACKENDS = {"supabase": _supabase, "appwrite": _appwrite}
 _LABELS = {"supabase": "Supabase", "appwrite": "Appwrite"}
 
 
-# ---------------------------------------------------------------------------
-# Pemilihan backend
-# ---------------------------------------------------------------------------
 def _preference() -> str:
     """Baca preferensi backend dari env, lalu secrets ``[app] backend``."""
     preference = (os.environ.get("KONVERTER_BACKEND") or "").strip().lower()
@@ -94,9 +91,6 @@ def is_configured() -> bool:
     return provider() is not None
 
 
-# ---------------------------------------------------------------------------
-# Auth
-# ---------------------------------------------------------------------------
 def current_user() -> Optional[dict]:
     """Ringkasan pengguna yang login, atau None untuk mode tamu."""
     module = backend()
@@ -121,9 +115,6 @@ def sign_out() -> None:
         module.sign_out()
 
 
-# ---------------------------------------------------------------------------
-# Storage
-# ---------------------------------------------------------------------------
 def object_path(user_id: str, job_id: str, filename: str) -> str:
     """Konvensi referensi objek: ``<user_id>/<job_id>/<nama-file>``."""
     module = backend()
@@ -173,9 +164,6 @@ def remove_objects(bucket: str, paths) -> None:
         module.remove_objects(bucket, paths)
 
 
-# ---------------------------------------------------------------------------
-# Riwayat pekerjaan
-# ---------------------------------------------------------------------------
 def create_job(user_id: str, conversion_type: str, original_name: str, source_size: int,
                source_path: Optional[str]) -> Optional[str]:
     """Sisipkan baris pekerjaan baru; kembalikan id atau None."""
@@ -205,13 +193,10 @@ def delete_job(user_id: str, job: dict) -> None:
         module.delete_job(user_id, job)
 
 
-# ---------------------------------------------------------------------------
-# Diagnostik
-# ---------------------------------------------------------------------------
 def _http_health(url: str, headers: Optional[dict] = None) -> tuple:
     try:
         import httpx
-    except ImportError:  # pragma: no cover - httpx ikut terpasang bersama supabase
+    except ImportError:
         return False, "httpx tidak tersedia"
 
     try:

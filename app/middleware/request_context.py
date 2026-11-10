@@ -41,12 +41,10 @@ def register_request_logging(app):
 
     @app.before_request
     def _inject_request_context():
-        # Generate request_id
         g.request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex[:12])
         g.start_time = time.perf_counter()
         g.start_memory_mb = get_memory_usage_mb()
 
-        # Log request masuk
         current_app.logger.info("Request started", extra={
             "context": {
                 "request_id": g.request_id,
@@ -82,7 +80,6 @@ def register_request_logging(app):
             }
         })
 
-        # Tambahkan header response
         response.headers["X-Request-ID"] = g.request_id
         response.headers["X-Response-Time-Ms"] = str(duration_ms)
         if end_memory_mb is not None:

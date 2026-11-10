@@ -1,19 +1,7 @@
 name: Keep Streamlit Awake
 
-# Menjaga app Streamlit Community Cloud tetap bangun.
-# Streamlit memakai "kunjungan browser sungguhan" (JavaScript + WebSocket) sebagai
-# aktivitas, bukan HTTP GET biasa. Karena itu workflow ini membuka app di Chromium
-# headless lewat Playwright, mengklik tombol "Yes, get this app back up!" bila app
-# sedang tidur, lalu menahan sesi sebentar agar aktivitas tercatat.
-#
-# Pasang URL app di: Settings > Secrets and variables > Actions > Variables
-#   name : STREAMLIT_APP_URL
-#   value: https://<subdomain>.streamlit.app
-# Kalau variabel belum diisi, dipakai nilai default di bawah.
-
 on:
   schedule:
-    # Tiap 3 jam, menit ke-17 (hindari antrean cron di menit 0).
     - cron: "17 */3 * * *"
   push:
     branches: [main]

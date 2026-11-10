@@ -26,7 +26,7 @@ from typing import Optional
 
 try:
     import streamlit as st
-except ImportError:  # pragma: no cover - hanya varian Streamlit
+except ImportError:
     st = None
 
 try:
@@ -40,7 +40,7 @@ try:
     from appwrite.services.account import Account
     from appwrite.services.storage import Storage
     from appwrite.services.tables_db import TablesDB
-except ImportError:  # pragma: no cover - dependensi opsional
+except ImportError:
     Client = None
     AppwriteException = Exception
     ID = None
@@ -62,9 +62,6 @@ _USER_KEY = "_aw_user"
 _REQUIRED_MESSAGE = "Appwrite belum dikonfigurasi."
 
 
-# ---------------------------------------------------------------------------
-# Konfigurasi (st.secrets -> env var -> default)
-# ---------------------------------------------------------------------------
 def _secrets_section() -> dict:
     """Baca blok ``[appwrite]`` dari ``st.secrets`` tanpa gagal bila belum ada."""
     if st is None:
@@ -97,8 +94,6 @@ def _config() -> dict:
         "database_id": _pick(secrets.get("database_id"), "APPWRITE_DATABASE_ID", "konverter"),
         "jobs_table_id": _pick(secrets.get("jobs_table_id"), "APPWRITE_JOBS_TABLE_ID", "jobs"),
         "sources_bucket_id": _pick(secrets.get("sources_bucket_id"), "APPWRITE_SOURCES_BUCKET_ID", "sources"),
-        # Plan Free Appwrite hanya punya 1 bucket, jadi default hasil = bucket
-        # sumber. File tetap terpisah lewat path <user_id>/<job_id>/<nama-file>.
         "results_bucket_id": _pick(secrets.get("results_bucket_id"), "APPWRITE_RESULTS_BUCKET_ID", "sources"),
     }
 
@@ -112,9 +107,6 @@ def is_configured() -> bool:
     return bool(config["endpoint"]) and bool(config["project_id"]) and "<" not in config["project_id"]
 
 
-# ---------------------------------------------------------------------------
-# Klien & sesi
-# ---------------------------------------------------------------------------
 def get_client() -> Optional["Client"]:
     """Klien Appwrite **per sesi** Streamlit (tidak dibagikan antar pengguna)."""
     if not is_configured() or st is None:
@@ -236,9 +228,6 @@ def sign_out() -> None:
         st.session_state.pop(key, None)
 
 
-# ---------------------------------------------------------------------------
-# Storage
-# ---------------------------------------------------------------------------
 def _safe_name(name: str) -> str:
     """Bersihkan nama file agar aman dipakai sebagai objek storage."""
     base = os.path.basename(name or "file")
@@ -347,9 +336,6 @@ def remove_objects(bucket: str, paths) -> None:
             pass
 
 
-# ---------------------------------------------------------------------------
-# Riwayat pekerjaan (TablesDB)
-# ---------------------------------------------------------------------------
 def _table():
     client = get_client()
 

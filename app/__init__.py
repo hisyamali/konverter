@@ -14,7 +14,6 @@ def create_app():
     """Siapkan konfigurasi upload/output, folder storage, logging, dan blueprint route."""
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-this-secret-key")
-    # URL aplikasi Streamlit (untuk tombol "Masuk" di navbar); kosong = tombol disembunyikan.
     app.config["STREAMLIT_URL"] = os.environ.get("KONVERTER_STREAMLIT_URL", "").strip()
 
     max_upload_mb = int(os.environ.get("KONVERTER_MAX_UPLOAD_MB", "128"))
@@ -28,11 +27,9 @@ def create_app():
     app.config["UPLOAD_FOLDER"].mkdir(parents=True, exist_ok=True)
     app.config["OUTPUT_FOLDER"].mkdir(parents=True, exist_ok=True)
 
-    # Logging & request context middleware
     configure_logging(app)
     register_request_logging(app)
 
-    # Blueprints
     app.register_blueprint(main_bp)
     app.register_blueprint(logs_bp)
 

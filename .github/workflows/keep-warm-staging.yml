@@ -1,22 +1,7 @@
 name: Keep Streamlit Staging Awake
 
-# Menjaga app Streamlit staging (deploy dari branch `staging`) tetap bangun.
-# Streamlit memakai "kunjungan browser sungguhan" (JavaScript + WebSocket) sebagai
-# aktivitas, bukan HTTP GET biasa. Karena itu workflow ini membuka app di Chromium
-# headless lewat Playwright, mengklik tombol "Yes, get this app back up!" bila app
-# sedang tidur, lalu menahan sesi sebentar agar aktivitas tercatat.
-#
-# Pasang URL app staging di: Settings > Secrets and variables > Actions > Variables
-#   name : STREAMLIT_STAGING_APP_URL
-#   value: https://<subdomain>-staging.streamlit.app
-# Kalau variabel belum diisi, dipakai nilai default di bawah.
-#
-# Catatan: jadwal (cron) hanya aktif bila file workflow ini ada di branch default
-# (`main`). Dari branch `staging`, gunakan tombol "Run workflow" di tab Actions.
-
 on:
   schedule:
-    # Tiap 3 jam, menit ke-23 (beri jarak dari workflow app utama).
     - cron: "23 */3 * * *"
   push:
     branches: [staging]

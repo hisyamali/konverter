@@ -23,7 +23,7 @@ def _check_auth():
     """Cek basic auth jika LOG_VIEWER_AUTH diset."""
     auth = os.environ.get("LOG_VIEWER_AUTH")
     if not auth:
-        return True  # Tidak ada auth → izinkan (dev mode)
+        return True
 
     expected = auth.strip()
     auth_header = request.headers.get("Authorization", "")
@@ -100,8 +100,6 @@ def _read_log_tail(filepath, lines=500, level_filter=None, search=None):
     level_map = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
     min_level = level_map.get(level_filter, -1) if level_filter else -1
 
-    # Baca dari belakang (efficient untuk file besar)
-    # Gunakan deque untuk tail efisien
     from collections import deque
     matched = deque(maxlen=lines)
     total_lines = 0
@@ -113,7 +111,6 @@ def _read_log_tail(filepath, lines=500, level_filter=None, search=None):
                 if search and search.lower() not in line.lower():
                     continue
                 if min_level >= 0:
-                    # Cek level di awal baris: [timestamp] channel.LEVEL:
                     match = re.search(r'\]\s+\w+\.(\w+):', line)
                     if match:
                         line_level = match.group(1).upper()
@@ -149,7 +146,6 @@ def view(filename):
     log_dir = _get_log_dir()
     filepath = log_dir / filename
 
-    # Keamanan: hindari path traversal
     try:
         filepath.resolve().relative_to(log_dir.resolve())
     except ValueError:
@@ -158,7 +154,6 @@ def view(filename):
     if not filepath.exists():
         abort(404)
 
-    # Query params
     lines = request.args.get("lines", default=500, type=int)
     lines = max(10, min(lines, 5000))
     level = request.args.get("level", default="", type=str).upper()
@@ -201,7 +196,6 @@ def api():
 
     log_lines, total = _read_log_tail(filepath, lines + offset, level if level else None, search if search else None)
 
-    # Pagination: ambil slice
     page_lines = log_lines[offset:offset + lines]
 
     return jsonify({

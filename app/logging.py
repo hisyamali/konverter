@@ -69,7 +69,6 @@ def configure_logging(app):
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "app.log"
 
-    # Handler configuration
     handlers_config = {
         "console": {
             "class": "logging.StreamHandler",
@@ -89,7 +88,6 @@ def configure_logging(app):
         },
     }
 
-    # Pilih handler berdasarkan LOG_CHANNEL
     if log_channel == "daily":
         active_handlers = ["daily"]
     elif log_channel == "single":
@@ -98,7 +96,7 @@ def configure_logging(app):
         handlers_config["daily"]["interval"] = 1
     elif log_channel == "console":
         active_handlers = ["console"]
-    else:  # stack (default)
+    else:
         active_handlers = ["console", "daily"]
 
     logging.config.dictConfig({
@@ -128,7 +126,6 @@ def configure_logging(app):
         },
     })
 
-    # Set app.logger ke logger "app"
     app.logger = logging.getLogger("app")
     app.logger.info("Logging configured", extra={
         "context": {"level": log_level, "channel": log_channel, "max_files": max_files}

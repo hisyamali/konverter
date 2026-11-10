@@ -1,16 +1,3 @@
-/**
- * Menjaga app Streamlit Community Cloud tetap bangun.
- *
- * Streamlit menghitung "activity" dari sesi browser (JavaScript + WebSocket),
- * bukan dari HTTP GET biasa. Skrip ini membuka app dengan Chromium headless,
- * mengklik tombol bangun bila app sedang tidur, lalu menahan sesi beberapa detik
- * supaya kunjungan benar-benar tercatat.
- *
- * Env:
- *   APP_URL        URL app Streamlit (wajib)
- *   HOLD_SECONDS   Lama sesi ditahan setelah app sehat (default 60)
- */
-
 import { chromium } from "playwright";
 
 const APP_URL = (process.env.APP_URL ?? "").trim().replace(/\/+$/, "");

@@ -28,8 +28,6 @@ except ImportError:
     psutil = None
 
 
-# Engine pembaca teks: PyMuPDF jauh lebih cepat untuk ekstraksi kata, tetapi
-# ekstraksi tabel bergaris tetap memakai pdfplumber (hasilnya lebih akurat).
 _FAST_WORDS_ENABLED = os.environ.get("KONVERTER_PDF_WORDS", "1") not in ("0", "false", "False")
 FAST_WORDS_AVAILABLE = pymupdf is not None and _FAST_WORDS_ENABLED
 
@@ -123,14 +121,10 @@ def _physical_cores():
     return max(1, logical // 2)
 
 
-# Ambang ini sengaja tinggi: spawn proses mahal (5-10 dtk saat RAM tertekan),
-# jadi dokumen di bawah ambang lebih cepat diproses sekuensial.
 PARALLEL_MIN_PAGES = int(os.environ.get("KONVERTER_MIN_PARALLEL_PAGES", "60"))
 PARALLEL_MAX_WORKERS_CAP = int(os.environ.get("KONVERTER_MAX_WORKERS_CAP", "8"))
 PARALLEL_CHUNK_PAGES = int(os.environ.get("KONVERTER_CHUNK_PAGES", "10"))
 PARALLEL_MAX_TASKS_PER_CHILD = int(os.environ.get("KONVERTER_TASKS_PER_CHILD", "32"))
-# Jalur teks memakai PyMuPDF (±5 ms/halaman), sehingga proses paralel baru
-# menguntungkan untuk dokumen sangat tebal; di bawah itu overhead spawn lebih besar.
 TEXT_PARALLEL_MIN_PAGES = int(
     os.environ.get("KONVERTER_TEXT_MIN_PARALLEL_PAGES", "1000" if FAST_WORDS_AVAILABLE else str(PARALLEL_MIN_PAGES))
 )
@@ -141,8 +135,6 @@ PARALLEL_MEMORY_RESERVE_GB = float(os.environ.get("KONVERTER_MEM_RESERVE_GB", "0
 PARALLEL_MEMORY_FLOOR_GB = float(os.environ.get("KONVERTER_MEM_FLOOR_GB", "0.35"))
 POLITE_MODE = os.environ.get("KONVERTER_POLITE", "1") not in ("0", "false", "False")
 
-# Pesan "Halaman X dari Y" hanya dikirim saat kemajuan melewati langkah ini;
-# dijaga lebih kecil dari ukuran chunk agar tiap chunk selesai tetap dilaporkan.
 PROGRESS_PAGE_STEP = int(os.environ.get("KONVERTER_PROGRESS_PAGE_STEP", "5"))
 
 _workers_override = int(os.environ.get("KONVERTER_MAX_WORKERS", "0") or "0")
@@ -162,7 +154,6 @@ PDF_TABLE_SETTINGS = {
     "edge_min_length": 5,
 }
 
-# Kolom teks untuk laporan mutasi bank berbasis teks (tanpa garis tabel), mis. Sumsel/BRI.
 TEXT_DATE_X_MAX = 50
 TEXT_DESC_X_MIN = 90
 TEXT_DESC_X_MAX = 270

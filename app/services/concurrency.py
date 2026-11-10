@@ -10,11 +10,8 @@ import threading
 import time
 from contextlib import contextmanager
 
-# Jumlah konversi berat yang boleh berjalan bersamaan.
 MAX_CONCURRENT = int(os.environ.get("KONVERTER_MAX_CONCURRENT", "4") or "4")
-# Lama maksimum menunggu slot sebelum menolak permintaan (detik).
 MAX_WAIT_SECONDS = int(os.environ.get("KONVERTER_QUEUE_WAIT_SECONDS", "900") or "900")
-# Interval pengecekan slot dan pelaporan posisi antrean (detik).
 POLL_SECONDS = 0.5
 
 _lock = threading.Lock()
