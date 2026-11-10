@@ -1,15 +1,5 @@
-/*
- * Jembatan CSS untuk Streamlit.
- *
- * Hanya berisi hal yang tidak bisa dicapai Tailwind: menata DOM milik Streamlit
- * sendiri (widget, container ber-key, chrome aplikasi). Seluruh markup custom
- * (hero, stepper, kartu, tabel pratinjau, overlay) sudah memakai utility
- * Tailwind dari app/static/css/tailwind-streamlit.css.
- */
-
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
 
-/* Sembunyikan chrome bawaan Streamlit. */
 #MainMenu,
 header[data-testid="stHeader"],
 footer {
@@ -33,7 +23,6 @@ footer {
     padding: 48px 16px !important;
 }
 
-/* --- Container ber-key: kartu hero & kartu konverter --- */
 .st-key-kv-hero {
     background: rgba(255, 255, 255, 0.82);
     border-radius: 34px;
@@ -52,13 +41,34 @@ footer {
     gap: 14px;
 }
 
-/* --- Widget: label, select, file uploader --- */
 [data-testid="stWidgetLabel"] p,
 .stSelectbox label,
 .stFileUploader label {
     color: #23324a !important;
     font-size: 0.9rem !important;
     font-weight: 800 !important;
+}
+
+[data-testid="stTextInputRootElement"] {
+    border: 2px solid #8a99ad !important;
+    border: 2px solid light-dark(#8a99ad, #64748b) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+[data-testid="stTextInputRootElement"]:hover {
+    border-color: #5d6d84 !important;
+    border-color: light-dark(#5d6d84, #94a3b8) !important;
+}
+
+[data-testid="stTextInputRootElement"]:focus-within {
+    border-color: #1b49d8 !important;
+    box-shadow: 0 0 0 3px rgba(27, 73, 216, 0.28) !important;
+}
+
+[data-testid="stTextInputField"] {
+    padding: 12px 14px !important;
 }
 
 div[data-baseweb="select"] > div {
@@ -85,7 +95,6 @@ div[data-baseweb="select"] > div {
     font-weight: 800;
 }
 
-/* --- Tombol utama Streamlit --- */
 .stButton > button,
 [data-testid="stButton"] button,
 .stDownloadButton > button,
@@ -147,7 +156,6 @@ div[data-baseweb="select"] > div {
     }
 }
 
-/* --- Header aplikasi: brand + kontrol akun, di atas kartu hero --- */
 .st-key-kv-header {
     background: rgba(255, 255, 255, 0.86);
     border: 1px solid #e5ebf5;
@@ -158,14 +166,11 @@ div[data-baseweb="select"] > div {
     margin-bottom: 18px;
 }
 
-/* Biarkan isi header tumbuh setinggi kontennya agar brand tepat di tengah
-   (Streamlit membatasi tinggi elemen markdown sehingga brand tampak turun). */
 .st-key-kv-header .stMarkdown,
 .st-key-kv-header [data-testid="stElementContainer"] {
     height: auto !important;
 }
 
-/* Netralkan margin negatif bawaan markdown yang membuat brand turun. */
 .st-key-kv-header [data-testid="stMarkdownContainer"] {
     margin-bottom: 0 !important;
 }
@@ -174,7 +179,6 @@ div[data-baseweb="select"] > div {
     margin-bottom: 0 !important;
 }
 
-/* Kontrol akun rata kanan di header (rapat konten, tanpa jarak baris ekstra). */
 .st-key-kv-header [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child [data-testid="stMarkdownContainer"],
 .st-key-kv-header [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child [data-testid="stMarkdownContainer"] > div {
     display: flex;
@@ -182,7 +186,6 @@ div[data-baseweb="select"] > div {
     align-items: center;
 }
 
-/* --- Kartu alat: tombol transparan menutupi seluruh kartu agar bisa diklik --- */
 .st-key-kv-tool-pdf,
 .st-key-kv-tool-csv {
     position: relative;
@@ -235,7 +238,6 @@ div[data-baseweb="select"] > div {
     outline-offset: 2px;
 }
 
-/* --- Navbar: gradient gelap, brand kiri, tombol kanan --- */
 .st-key-kv-navbar {
     background: linear-gradient(135deg, #1b49d8 0%, #16213e 100%);
     border-radius: 20px;
@@ -293,7 +295,6 @@ div[data-baseweb="select"] > div {
     white-space: nowrap;
 }
 
-/* Tombol navbar: ringan, bukan tombol utama raksasa. */
 .st-key-kv-navbar [data-testid="stButton"] button {
     width: 100%;
     min-height: 40px !important;
@@ -313,7 +314,6 @@ div[data-baseweb="select"] > div {
     transform: none;
 }
 
-/* Tombol Masuk: putih solid, seperti di navbar Flask. */
 .st-key-kv-navbar [data-testid="stButton"] button[kind="primary"] {
     background: #ffffff !important;
     color: #16213e !important;
@@ -325,7 +325,6 @@ div[data-baseweb="select"] > div {
     color: #1b49d8 !important;
 }
 
-/* Streamlit netralkan gaya asli pada elemen markdown di dalam navbar. */
 .st-key-kv-navbar [data-testid="stMarkdownContainer"] {
     margin: 0 !important;
     padding: 0 !important;
@@ -355,5 +354,3 @@ div[data-baseweb="select"] > div {
         font-size: 0.78rem !important;
     }
 }
-
-
