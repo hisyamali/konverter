@@ -609,7 +609,6 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
 
 
 def _page_auth() -> None:
-    streamlit.caption("build marker: auth-cookie-5a004a7")
     _brand_row(None, back_label="← Kembali", show_login=False)
 
     with streamlit.container(key="kv-hero"):
