@@ -1,8 +1,14 @@
 import hashlib
+import json
 import os
 import re
 from datetime import datetime, timezone
 from typing import Optional
+
+try:
+    import requests
+except ImportError:
+    requests = None
 
 try:
     import streamlit
@@ -113,13 +119,67 @@ def _require_client() -> "Client":
     return client
 
 
-def _session_secret(session) -> Optional[str]:
-    secret = getattr(session, "secret", None)
+def _cookie_from_response(response) -> Optional[str]:
+    fallback = response.headers.get("x-fallback-cookies")
 
-    if secret is None and isinstance(session, dict):
-        secret = session.get("secret")
+    if fallback:
+        try:
+            cookies = json.loads(fallback)
+        except (TypeError, ValueError):
+            cookies = {}
 
-    return secret
+        parts = [f"{name}={value}" for name, value in cookies.items() if name and value]
+
+        if parts:
+            return "; ".join(parts)
+
+    parts = [f"{cookie.name}={cookie.value}" for cookie in response.cookies if cookie.name.startswith("a_session_")]
+
+    return "; ".join(parts) or None
+
+
+def _create_email_password_session(client, email: str, password: str) -> str:
+    if requests is None:
+        raise AppwriteException("Pustaka requests tidak tersedia untuk login Appwrite.")
+
+    config = _config()
+    response_format = client.get_headers().get("X-Appwrite-Response-Format") or "2.6.2"
+    headers = {
+        "X-Appwrite-Project": config["project_id"],
+        "X-Appwrite-Response-Format": response_format,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            config["endpoint"].rstrip("/") + "/account/sessions/email",
+            headers=headers,
+            json={"email": email, "password": password},
+            timeout=20,
+        )
+    except Exception as error:
+        raise AppwriteException(f"Server akun tidak dapat dihubungi: {error}")
+
+    if response.status_code >= 400:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+
+        raise AppwriteException(
+            payload.get("message") or response.text or "Login gagal.",
+            payload.get("code", response.status_code),
+            payload.get("type"),
+        )
+
+    cookie = _cookie_from_response(response)
+
+    if not cookie:
+        raise AppwriteException("Sesi Appwrite tidak mengembalikan cookie autentikasi.")
+
+    client.set_cookie(cookie)
+    return cookie
 
 
 def _restore_session(client) -> None:
@@ -128,24 +188,29 @@ def _restore_session(client) -> None:
     if not session:
         return
 
+    cookie = session.get("cookie") if isinstance(session, dict) else None
+
+    if not cookie:
+        streamlit.session_state.pop(_SESSION_KEY, None)
+        streamlit.session_state.pop(_USER_KEY, None)
+        return
+
     try:
-        client.set_session(session["secret"])
+        client.set_cookie(cookie)
     except Exception:
         streamlit.session_state.pop(_SESSION_KEY, None)
         streamlit.session_state.pop(_USER_KEY, None)
 
 
-def _remember_user(user, session=None) -> dict:
+def _remember_user(user, cookie: Optional[str] = None) -> dict:
     user_info = {
         "id": getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else "") or "",
         "email": getattr(user, "email", None) or (user.get("email") if isinstance(user, dict) else "") or "",
     }
     streamlit.session_state[_USER_KEY] = user_info
 
-    secret = _session_secret(session)
-
-    if secret:
-        streamlit.session_state[_SESSION_KEY] = {"secret": secret, "user_id": user_info["id"]}
+    if cookie:
+        streamlit.session_state[_SESSION_KEY] = {"cookie": cookie, "user_id": user_info["id"]}
 
     return user_info
 
@@ -162,10 +227,10 @@ def sign_up(email: str, password: str) -> dict:
     account = Account(client)
     name = (email.split("@")[0] or "pengguna")[:120]
 
-    user = account.create(ID.unique(), email, password, name)
-    session = account.create_email_password_session(email, password)
-    client.set_session(session.secret)
-    _remember_user(user, session)
+    account.create(ID.unique(), email, password, name)
+    cookie = _create_email_password_session(client, email, password)
+    user = account.get()
+    _remember_user(user, cookie)
 
     return {"needs_confirmation": False, "user": current_user()}
 
@@ -174,11 +239,10 @@ def sign_in(email: str, password: str) -> dict:
     client = _require_client()
     account = Account(client)
 
-    session = account.create_email_password_session(email, password)
-    client.set_session(session.secret)
+    cookie = _create_email_password_session(client, email, password)
     user = account.get()
 
-    return _remember_user(user, session)
+    return _remember_user(user, cookie)
 
 
 def sign_out() -> None:
