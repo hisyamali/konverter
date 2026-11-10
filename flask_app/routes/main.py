@@ -266,9 +266,9 @@ def _cleanup(*paths):
 
 
 def _sweep_stale():
-    flask_app = current_app
-    deleted_uploads = sweep_old_files(flask_app.config["UPLOAD_FOLDER"])
-    deleted_outputs = sweep_old_files(flask_app.config["OUTPUT_FOLDER"])
+    current = current_app
+    deleted_uploads = sweep_old_files(current.config["UPLOAD_FOLDER"])
+    deleted_outputs = sweep_old_files(current.config["OUTPUT_FOLDER"])
     if deleted_uploads or deleted_outputs:
         current_app.logger.info("Sweep completed", extra={
             "context": {

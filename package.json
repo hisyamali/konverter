@@ -4,11 +4,11 @@
   "private": true,
   "description": "Build pipeline Tailwind CSS untuk UI Flask dan Streamlit.",
   "scripts": {
-    "build:css:flask": "tailwindcss -i app/static/css/tailwind.src.css -o app/static/css/tailwind.css --minify",
-    "build:css:streamlit": "tailwindcss -i app/static/css/tailwind.streamlit.src.css -o app/static/css/tailwind-streamlit.css --minify",
+    "build:css:flask": "tailwindcss -i flask_app/static/css/tailwind.src.css -o flask_app/static/css/tailwind.css --minify",
+    "build:css:streamlit": "tailwindcss -i flask_app/static/css/tailwind.streamlit.src.css -o flask_app/static/css/tailwind-streamlit.css --minify",
     "build:css": "npm run build:css:flask && npm run build:css:streamlit",
-    "watch:css:flask": "tailwindcss -i app/static/css/tailwind.src.css -o app/static/css/tailwind.css --watch",
-    "watch:css:streamlit": "tailwindcss -i app/static/css/tailwind.streamlit.src.css -o app/static/css/tailwind-streamlit.css --watch"
+    "watch:css:flask": "tailwindcss -i flask_app/static/css/tailwind.src.css -o flask_app/static/css/tailwind.css --watch",
+    "watch:css:streamlit": "tailwindcss -i flask_app/static/css/tailwind.streamlit.src.css -o flask_app/static/css/tailwind-streamlit.css --watch"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.11",

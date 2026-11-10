@@ -55,7 +55,7 @@ KONVERTER_MAX_WORKERS=2 python run.py          # Linux/macOS
 
 ## Tailwind CSS (UI)
 
-Antarmuka (Flask & Streamlit) memakai **Tailwind CSS v4**. File hasil build (`app/static/css/tailwind.css` dan `app/static/css/tailwind-streamlit.css`) **di-commit** karena Streamlit Community Cloud tidak menjalankan Node saat deploy.
+Antarmuka (Flask & Streamlit) memakai **Tailwind CSS v4**. File hasil build (`flask_app/static/css/tailwind.css` dan `flask_app/static/css/tailwind-streamlit.css`) **di-commit** karena Streamlit Community Cloud tidak menjalankan Node saat deploy.
 
 ```bash
 npm install          # sekali saja
@@ -66,10 +66,10 @@ npm run watch:css:streamlit  # rebuild otomatis saat mengembangkan UI Streamlit
 
 Sumber Tailwind:
 
-- `app/static/css/tailwind.shared.css` — token desain (`@theme`) dan utility brand, dipakai bersama.
-- `app/static/css/tailwind.src.css` — input UI Flask (preflight penuh). `@source` mengarah ke `app/templates` dan `app/static/js`.
-- `app/static/css/tailwind.streamlit.src.css` — input UI Streamlit (tanpa preflight, utility `!important`). `@source` mengarah ke `streamlit_app.py`.
-- `app/static/css/streamlit.css` — jembatan untuk menata DOM milik Streamlit (widget, container `kv-hero`/`kv-converter`, tombol).
+- `flask_app/static/css/tailwind.shared.css` — token desain (`@theme`) dan utility brand, dipakai bersama.
+- `flask_app/static/css/tailwind.src.css` — input UI Flask (preflight penuh). `@source` mengarah ke `flask_app/templates` dan `flask_app/static/js`.
+- `flask_app/static/css/tailwind.streamlit.src.css` — input UI Streamlit (tanpa preflight, utility `!important`). `@source` mengarah ke `streamlit_app.py`.
+- `flask_app/static/css/streamlit.css` — jembatan untuk menata DOM milik Streamlit (widget, container `kv-hero`/`kv-converter`, tombol).
 
 Karena utility dipindai dari sumber, class yang dirangkai dinamis di Python/JS harus muncul utuh di file sumber (tidak boleh digabung dari potongan string). CI `.github/workflows/css-build.yml` menolak PR bila CSS hasil build tidak sinkron dengan sumber.
 
@@ -97,7 +97,7 @@ Aplikasi ini adalah **server Flask**, sehingga tidak bisa di-hosting di GitHub P
 
 ## Aplikasi Streamlit (opsional)
 
-Selain antarmuka Flask, repositori menyertakan varian **Streamlit** (`streamlit_app.py`) yang memakai ulang logika konversi yang sama (`app/services/converter.py`). Alur UX-nya mengikuti gaya **iLovePDF**: beranda berisi pilihan alat → halaman alat (unggah → pratinjau → konversi → unduh) → riwayat. Tampilan memakai utility **Tailwind** (`app/static/css/tailwind-streamlit.css`) untuk markup custom, ditambah `app/static/css/streamlit.css` sebagai jembatan untuk widget bawaan Streamlit.
+Selain antarmuka Flask, repositori menyertakan varian **Streamlit** (`streamlit_app.py`) yang memakai ulang logika konversi yang sama (`flask_app/services/converter.py`). Alur UX-nya mengikuti gaya **iLovePDF**: beranda berisi pilihan alat → halaman alat (unggah → pratinjau → konversi → unduh) → riwayat. Tampilan memakai utility **Tailwind** (`flask_app/static/css/tailwind-streamlit.css`) untuk markup custom, ditambah `flask_app/static/css/streamlit.css` sebagai jembatan untuk widget bawaan Streamlit.
 
 ```bash
 pip install -r requirements.txt
@@ -398,7 +398,7 @@ konverter/
 │   └── workflows/
 │       ├── docker-build.yml  # GitHub Actions: build & push image ke GHCR
 │       └── keep-warm.yml     # GitHub Actions: cegah app Streamlit tidur
-├── app/
+├── flask_app/
 │   ├── __init__.py         # create_app(), konfigurasi folder
 │   ├── routes/
 │   │   ├── main.py         # Endpoint /, /preview, /convert, /progress

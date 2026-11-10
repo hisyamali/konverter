@@ -11,19 +11,19 @@ os.environ.setdefault("KONVERTER_MAX_UPLOAD_MB", "50")
 
 import streamlit
 
-from app.services import store
-from app.services.concurrency import QueueTimeout, conversion_slot
-from app.services.converter import (
+from flask_app.services import store
+from flask_app.services.concurrency import QueueTimeout, conversion_slot
+from flask_app.services.converter import (
     convert_csv_to_excel,
     convert_pdf_to_excel,
     preview_csv_file,
     preview_pdf_file,
 )
-from app.services.eta import ProgressReporter, format_interval
+from flask_app.services.eta import ProgressReporter, format_interval
 
 EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-CSS_PATH = Path(__file__).parent / "app" / "static" / "css" / "streamlit.css"
-TAILWIND_CSS_PATH = Path(__file__).parent / "app" / "static" / "css" / "tailwind-streamlit.css"
+CSS_PATH = Path(__file__).parent / "flask_app" / "static" / "css" / "streamlit.css"
+TAILWIND_CSS_PATH = Path(__file__).parent / "flask_app" / "static" / "css" / "tailwind-streamlit.css"
 
 GUEST_MAX_MB = int(os.environ.get("KONVERTER_GUEST_MAX_UPLOAD_MB", "10") or "10")
 USER_MAX_MB = int(os.environ.get("KONVERTER_USER_MAX_UPLOAD_MB", "50") or "50")

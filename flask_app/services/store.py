@@ -7,8 +7,8 @@ try:
 except ImportError:
     streamlit = None
 
-from app.services import appwrite_store
-from app.services import supabase_store
+from flask_app.services import appwrite_store
+from flask_app.services import supabase_store
 
 SOURCE_BUCKET = "sources"
 RESULT_BUCKET = "results"

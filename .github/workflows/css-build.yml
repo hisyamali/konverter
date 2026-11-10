@@ -32,8 +32,8 @@ jobs:
 
       - name: Pastikan CSS hasil build sudah di-commit
         run: |
-          if ! git diff --quiet -- app/static/css/tailwind.css app/static/css/tailwind-streamlit.css; then
+          if ! git diff --quiet -- flask_app/static/css/tailwind.css flask_app/static/css/tailwind-streamlit.css; then
             echo "::error::CSS hasil build berbeda dari yang di-commit. Jalankan 'npm run build:css' lalu commit."
-            git diff --stat -- app/static/css/tailwind.css app/static/css/tailwind-streamlit.css
+            git diff --stat -- flask_app/static/css/tailwind.css flask_app/static/css/tailwind-streamlit.css
             exit 1
           fi

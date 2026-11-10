@@ -3,9 +3,9 @@ from pathlib import Path
 from pandas import DataFrame
 from flask import Flask
 
-from app.logging import configure_logging
-from app.middleware.request_context import register_request_logging
-from app.routes import main_blueprint, logs_blueprint
+from flask_app.logging import configure_logging
+from flask_app.middleware.request_context import register_request_logging
+from flask_app.routes import main_blueprint, logs_blueprint
 
 
 def create_app():

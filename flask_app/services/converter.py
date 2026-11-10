@@ -13,7 +13,7 @@ import pdfplumber
 from flask import current_app, has_app_context
 from openpyxl import Workbook
 
-from app.services import concurrency
+from flask_app.services import concurrency
 
 try:
     import pymupdf
