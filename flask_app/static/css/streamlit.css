@@ -309,6 +309,7 @@ div[data-baseweb="popover"] li {
     min-height: 48px !important;
     padding-left: 34px !important;
     padding-right: 34px !important;
+    box-shadow: none !important;
 }
 
 .st-key-konverter-header {
