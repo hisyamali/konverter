@@ -263,21 +263,17 @@ Catatan:
 
 Streamlit menghitung aktivitas dari **sesi browser** (JavaScript + WebSocket), bukan HTTP GET. Ping biasa (UptimeRobot, `curl`) tetap menerima `200` walau app sedang tidur, jadi tidak berguna. Karena itu repositori menyertakan workflow `.github/workflows/keep-warm.yml` yang membuka app memakai Chromium headless (Playwright), mengklik tombol **"Yes, get this app back up!"** bila app tidur, lalu menahan sesi ±60 detik.
 
-1. Set URL app di **Settings → Secrets and variables → Actions → Variables**:
-   - Name: `STREAMLIT_APP_URL`
-   - Value: `https://all-convert.streamlit.app`
-2. Jalankan manual sekali dari tab **Actions → Keep Streamlit Awake → Run workflow**.
-3. Setelah itu workflow berjalan otomatis tiap 3 jam.
+Workflow ini membangunkan **dua app sekaligus** (main + staging) dalam satu jadwal:
 
-Untuk **staging** (app Streamlit yang di-deploy dari branch `staging`), gunakan workflow `.github/workflows/keep-warm-staging.yml`:
-1. Set variabel terpisah di **Settings → Secrets and variables → Actions → Variables**:
-   - Name: `STREAMLIT_STAGING_APP_URL`
-   - Value: `https://<subdomain>-staging.streamlit.app`
-2. Jalankan manual dari tab **Actions → Keep Streamlit Staging Awake → Run workflow**.
-3. Workflow ini juga berjalan otomatis tiap 3 jam **setelah file-nya ada di branch default (`main`)**; dari branch `staging`, jadwal belum aktif sehingga perlu dijalankan manual.
+1. Set URL app di **Settings → Secrets and variables → Actions → Variables**:
+   - `STREAMLIT_APP_URL` → `https://all-convert.streamlit.app` (main)
+   - `STREAMLIT_STAGING_APP_URL` → `https://stagging-konverter.streamlit.app` (staging)
+   Keduanya opsional karena workflow sudah punya nilai default.
+2. Jalankan manual sekali dari tab **Actions → Keep Streamlit Awake → Run workflow**.
+3. Setelah itu workflow berjalan otomatis tiap 3 jam untuk kedua app.
 
 Catatan:
-- Workflow harus ada di branch default (`main`) agar jadwalnya aktif.
+- Workflow harus ada di branch default (`main`) agar jadwalnya aktif. Branch `staging` tidak menjalankan `schedule`, jadi jangan mengandalkan workflow terpisah di sana.
 - Repo publik memakai menit GitHub Actions gratis; repo privat memakai kuota 2.000 menit/bulan (≈960 menit di sini).
 - Ini bukan fitur resmi Streamlit dan bisa berhenti berfungsi bila kebijakan fair-use berubah. Pengunjung pertama setelah app tidur tetap melihat cold start.
 - GitHub menonaktifkan scheduled workflow bila repo tidak ada aktivitas selama 60 hari; jalankan manual untuk mengaktifkan lagi.
