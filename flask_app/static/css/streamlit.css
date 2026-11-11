@@ -348,6 +348,11 @@ div[data-baseweb="popover"] li {
     transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
 
+.st-key-konverter-tool-pdf [data-testid="stMarkdownContainer"],
+.st-key-konverter-tool-csv [data-testid="stMarkdownContainer"] {
+    margin-bottom: 0 !important;
+}
+
 .st-key-konverter-tool-pdf,
 .st-key-konverter-tool-csv {
     position: relative;
