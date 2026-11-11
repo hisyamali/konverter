@@ -202,14 +202,15 @@ div[data-baseweb="popover"] li {
     color: var(--color-konverter-body);
 }
 
-[data-testid="stTabs"] [role="tablist"] {
+.st-key-konverter-panel [data-testid="stTabs"] [role="tablist"] {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 6px;
-    border-bottom: 1px solid var(--color-konverter-border);
 }
 
-[data-testid="stTabs"] [data-testid="stTab"] {
-    color: var(--color-konverter-muted) !important;
-    font-weight: 800;
+.st-key-konverter-panel [data-testid="stTabs"] [data-testid="stTab"] {
+    width: 100%;
+    justify-content: center;
 }
 
 [data-testid="stTabs"] [data-testid="stTab"][aria-selected="true"] {
