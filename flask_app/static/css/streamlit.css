@@ -83,6 +83,19 @@ footer {
     color: var(--color-konverter-subtle) !important;
 }
 
+[data-testid="stTextInputRootElement"] button {
+    color: var(--color-konverter-muted) !important;
+}
+
+[data-testid="stTextInputRootElement"] button:hover,
+[data-testid="stTextInputRootElement"] button:focus-visible {
+    color: var(--color-konverter-ink) !important;
+}
+
+[data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"] {
+    color: inherit !important;
+}
+
 [data-testid="stTextInputField"] {
     padding: 12px 14px !important;
 }
