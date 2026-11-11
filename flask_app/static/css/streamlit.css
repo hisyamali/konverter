@@ -142,6 +142,17 @@ div[data-baseweb="popover"] li {
     transform: translateY(-1px);
 }
 
+.stButton > button [data-testid="stMarkdownContainer"],
+[data-testid="stButton"] button [data-testid="stMarkdownContainer"],
+.stDownloadButton > button [data-testid="stMarkdownContainer"],
+[data-testid="stDownloadButton"] button [data-testid="stMarkdownContainer"],
+.stButton > button p,
+[data-testid="stButton"] button p,
+.stDownloadButton > button p,
+[data-testid="stDownloadButton"] button p {
+    color: inherit !important;
+}
+
 .stButton > button:disabled,
 [data-testid="stButton"] button:disabled,
 .stDownloadButton > button:disabled,
@@ -543,6 +554,11 @@ div[data-baseweb="popover"] li {
     .st-key-konverter-hero [data-testid="stHorizontalBlock"]:has(.st-key-konverter-tool-csv) > [data-testid="stColumn"] {
         flex: 1 1 100%;
         width: 100% !important;
+    }
+
+    .st-key-konverter-hero [data-testid="stHorizontalBlock"]:has(.st-key-konverter-tool-pdf),
+    .st-key-konverter-hero [data-testid="stHorizontalBlock"]:has(.st-key-konverter-tool-csv) {
+        row-gap: 16px !important;
     }
 
     .st-key-konverter-navbar {
