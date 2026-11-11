@@ -1,0 +1,152 @@
+:root {
+    color-scheme: light;
+
+    --konverter-background-image: radial-gradient(circle at top left, rgba(64, 123, 255, 0.18), transparent 34rem),
+        linear-gradient(135deg, #f7f9fc 0%, #e9eef8 100%);
+    --konverter-button-image: linear-gradient(135deg, #1b49d8, #16213e);
+    --konverter-hero-background: rgba(255, 255, 255, 0.82);
+    --konverter-hero-shadow: 0 24px 70px rgba(34, 54, 96, 0.16);
+    --konverter-panel-shadow: 0 18px 48px rgba(55, 76, 118, 0.12);
+    --konverter-card-shadow: 0 12px 30px rgba(55, 76, 118, 0.08);
+    --konverter-card-shadow-hover: 0 18px 40px rgba(27, 73, 216, 0.16);
+    --konverter-button-shadow: 0 16px 36px rgba(27, 73, 216, 0.28);
+    --konverter-overlay-background: rgba(11, 18, 34, 0.55);
+    --konverter-focus-ring: rgba(27, 73, 216, 0.28);
+    --konverter-focus-outline: #1b49d8;
+    --konverter-input-border: #8a99ad;
+    --konverter-input-border-hover: #5d6d84;
+    --konverter-scrollbar: #c3cfe2;
+
+    --color-konverter-ink: light-dark(#152033, #e8eef9);
+    --color-konverter-blue-soft: light-dark(#e8efff, #1a2b52);
+    --color-konverter-blue-ink: light-dark(#2a5bd7, #9dbcff);
+    --color-konverter-muted: light-dark(#5d6b82, #a7b4c8);
+    --color-konverter-border: light-dark(#e5ebf5, #243149);
+    --color-konverter-line: light-dark(#d8e0ec, #2f3d57);
+    --color-konverter-heading: light-dark(#23324a, #dbe6f8);
+    --color-konverter-body: light-dark(#33415a, #c3cfe2);
+    --color-konverter-subtle: light-dark(#7d8aa1, #94a3b8);
+    --color-konverter-faint: light-dark(#8a97ad, #8b9ab1);
+    --color-konverter-surface: light-dark(#f8fafc, #131c2e);
+    --color-konverter-panel: light-dark(#f1f4fa, #172033);
+    --color-konverter-circle: light-dark(#dfe6f3, #26324a);
+    --color-konverter-th: light-dark(#eef2f9, #1b2537);
+    --color-konverter-track: light-dark(#e7ecf5, #26324a);
+    --color-konverter-card-ink: light-dark(#d5ddef, #c3cfe2);
+    --color-konverter-danger: light-dark(#be123c, #fb7185);
+    --color-konverter-danger-soft: light-dark(#fff1f2, #3a1520);
+    --color-konverter-success: light-dark(#15803d, #4ade80);
+    --color-konverter-success-soft: light-dark(#e6f7ec, #12301f);
+    --color-konverter-warn: light-dark(#b45309, #fbbf24);
+    --color-konverter-warn-soft: light-dark(#fff4e5, #3a2a10);
+    --color-konverter-card: light-dark(#ffffff, #131c2e);
+    --color-konverter-card-line: light-dark(#c9d5e5, #33415c);
+    --color-konverter-card-line-hover: light-dark(#1b49d8, #7ea2ff);
+    --color-konverter-info-soft: light-dark(#eef4ff, #16233d);
+    --color-konverter-info-border: light-dark(#c7dbff, #2a4066);
+    --color-konverter-info-ink: light-dark(#2a5bd7, #a8c4ff);
+    --color-konverter-success-border: light-dark(#bfe3c8, #2a5c3a);
+    --color-konverter-input: light-dark(#172033, #e8eef9);
+    --color-konverter-emphasis: light-dark(#16213e, #dbe6f8);
+    --color-konverter-overlay: light-dark(rgba(11, 18, 34, 0.55), rgba(2, 6, 16, 0.7));
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-konverter-theme="light"]) {
+        color-scheme: dark;
+        --konverter-background-image: radial-gradient(circle at top left, rgba(59, 107, 255, 0.18), transparent 34rem),
+            linear-gradient(135deg, #0a1120 0%, #101a2e 100%);
+        --konverter-hero-background: rgba(19, 28, 46, 0.86);
+        --konverter-hero-shadow: 0 24px 70px rgba(2, 6, 16, 0.55);
+        --konverter-panel-shadow: 0 18px 48px rgba(2, 6, 16, 0.45);
+        --konverter-card-shadow: 0 12px 30px rgba(2, 6, 16, 0.4);
+        --konverter-card-shadow-hover: 0 18px 40px rgba(59, 107, 255, 0.28);
+        --konverter-button-shadow: 0 16px 36px rgba(59, 107, 255, 0.3);
+        --konverter-overlay-background: rgba(2, 6, 16, 0.7);
+        --konverter-focus-ring: rgba(126, 162, 255, 0.35);
+        --konverter-focus-outline: #7ea2ff;
+        --konverter-input-border: #4c5b74;
+        --konverter-input-border-hover: #7c8ba5;
+        --konverter-scrollbar: #2b3850;
+    }
+}
+
+:root[data-konverter-theme="dark"] {
+    color-scheme: dark;
+    --konverter-background-image: radial-gradient(circle at top left, rgba(59, 107, 255, 0.18), transparent 34rem),
+        linear-gradient(135deg, #0a1120 0%, #101a2e 100%);
+    --konverter-hero-background: rgba(19, 28, 46, 0.86);
+    --konverter-hero-shadow: 0 24px 70px rgba(2, 6, 16, 0.55);
+    --konverter-panel-shadow: 0 18px 48px rgba(2, 6, 16, 0.45);
+    --konverter-card-shadow: 0 12px 30px rgba(2, 6, 16, 0.4);
+    --konverter-card-shadow-hover: 0 18px 40px rgba(59, 107, 255, 0.28);
+    --konverter-button-shadow: 0 16px 36px rgba(59, 107, 255, 0.3);
+    --konverter-overlay-background: rgba(2, 6, 16, 0.7);
+    --konverter-focus-ring: rgba(126, 162, 255, 0.35);
+    --konverter-focus-outline: #7ea2ff;
+    --konverter-input-border: #4c5b74;
+    --konverter-input-border-hover: #7c8ba5;
+    --konverter-scrollbar: #2b3850;
+}
+
+:root[data-konverter-theme="light"] {
+    color-scheme: light;
+}
+
+::selection {
+    background: light-dark(rgba(27, 73, 216, 0.18), rgba(126, 162, 255, 0.28));
+}
+
+.konverter-theme-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.konverter-theme-icon-sun {
+    display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-konverter-theme="light"]) .konverter-theme-icon-sun {
+        display: block;
+    }
+
+    :root:not([data-konverter-theme="light"]) .konverter-theme-icon-moon {
+        display: none;
+    }
+}
+
+:root[data-konverter-theme="dark"] .konverter-theme-icon-sun {
+    display: block;
+}
+
+:root[data-konverter-theme="dark"] .konverter-theme-icon-moon {
+    display: none;
+}
+
+:root[data-konverter-theme="light"] .konverter-theme-icon-sun {
+    display: none;
+}
+
+:root[data-konverter-theme="light"] .konverter-theme-icon-moon {
+    display: block;
+}
+
+.level-error {
+    color: light-dark(#dc3545, #f87171);
+    font-weight: 600;
+}
+
+.level-warning {
+    color: light-dark(#a15c00, #fbbf24);
+    font-weight: 600;
+}
+
+.level-info {
+    color: light-dark(#0d6efd, #7ea2ff);
+}
+
+.level-debug {
+    color: light-dark(#6c757d, #94a3b8);
+}

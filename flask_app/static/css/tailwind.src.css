@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @import "./tailwind.shared.css";
+@import "./theme.css";
+
+@custom-variant dark (&:where([data-konverter-theme="dark"], [data-konverter-theme="dark"] *));
 
 @source "../../templates";
 @source "../js";
@@ -14,12 +17,12 @@
 }
 
 .step.is-active {
-    background-color: #e8efff;
-    color: #2a5bd7;
+    background-color: var(--color-konverter-blue-soft);
+    color: var(--color-konverter-blue-ink);
 }
 
 .step.is-active span {
-    background-color: #1b49d8;
+    background-color: var(--color-konverter-blue);
     color: #ffffff;
 }
 
@@ -28,24 +31,6 @@
 }
 
 .preview-status.is-error {
-    background-color: #fff1f2;
-    color: #be123c;
-}
-
-.level-error {
-    color: #dc3545;
-    font-weight: 600;
-}
-
-.level-warning {
-    color: #ffc107;
-    font-weight: 600;
-}
-
-.level-info {
-    color: #0d6efd;
-}
-
-.level-debug {
-    color: #6c757d;
+    background-color: var(--color-konverter-danger-soft);
+    color: var(--color-konverter-danger);
 }

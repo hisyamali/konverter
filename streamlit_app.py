@@ -10,6 +10,7 @@ os.environ.setdefault("KONVERTER_MAX_WORKERS", "1" if os.name == "nt" else "2")
 os.environ.setdefault("KONVERTER_MAX_UPLOAD_MB", "50")
 
 import streamlit
+import streamlit.components.v1 as components
 
 from flask_app.services import store
 from flask_app.services.concurrency import QueueTimeout, conversion_slot
@@ -23,7 +24,9 @@ from flask_app.services.eta import ProgressReporter, format_interval
 
 EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSS_PATH = Path(__file__).parent / "flask_app" / "static" / "css" / "streamlit.css"
+THEME_CSS_PATH = Path(__file__).parent / "flask_app" / "static" / "css" / "theme.css"
 TAILWIND_CSS_PATH = Path(__file__).parent / "flask_app" / "static" / "css" / "tailwind-streamlit.css"
+THEME_SCRIPT_PATH = Path(__file__).parent / "flask_app" / "static" / "js" / "theme.js"
 
 GUEST_MAX_MB = int(os.environ.get("KONVERTER_GUEST_MAX_UPLOAD_MB", "10") or "10")
 USER_MAX_MB = int(os.environ.get("KONVERTER_USER_MAX_UPLOAD_MB", "50") or "50")
@@ -40,8 +43,20 @@ if TAILWIND_CSS_PATH.exists():
         unsafe_allow_html=True,
     )
 
+if THEME_CSS_PATH.exists():
+    streamlit.markdown(
+        f"<style>{THEME_CSS_PATH.read_text(encoding='utf-8')}</style>",
+        unsafe_allow_html=True,
+    )
+
 if CSS_PATH.exists():
     streamlit.markdown(f"<style>{CSS_PATH.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+
+if THEME_SCRIPT_PATH.exists():
+    components.html(
+        f"<script>{THEME_SCRIPT_PATH.read_text(encoding='utf-8')}</script>",
+        height=0,
+    )
 
 
 def _escape_html(value) -> str:
@@ -80,11 +95,11 @@ def _table_html(headers, rows) -> str:
         "<tr>" + "".join(f"<td>{_escape_html(cell)}</td>" for cell in row) + "</tr>" for row in rows
     )
     return (
-        '<div class="max-h-[300px] w-full overflow-auto rounded-2xl border border-kv-border bg-white">'
+        '<div class="max-h-[300px] w-full overflow-auto rounded-2xl border border-konverter-border bg-konverter-card">'
         '<table class="w-full border-collapse text-[0.82rem] '
-        "[&_th]:whitespace-nowrap [&_th]:bg-kv-th [&_th]:px-2.5 [&_th]:py-[9px] [&_th]:text-left "
-        '[&_th]:font-extrabold [&_th]:text-kv-heading [&_td]:whitespace-nowrap [&_td]:border-t '
-        '[&_td]:border-[#eef2f7] [&_td]:px-2.5 [&_td]:py-2 [&_td]:text-kv-body">'
+        "[&_th]:whitespace-nowrap [&_th]:bg-konverter-th [&_th]:px-2.5 [&_th]:py-[9px] [&_th]:text-left "
+        '[&_th]:font-extrabold [&_th]:text-konverter-heading [&_td]:whitespace-nowrap [&_td]:border-t '
+        '[&_td]:border-konverter-border [&_td]:px-2.5 [&_td]:py-2 [&_td]:text-konverter-body">'
         f"<thead><tr>{table_head_html}</tr></thead><tbody>{table_body_html}</tbody></table></div>"
     )
 
@@ -92,11 +107,11 @@ def _table_html(headers, rows) -> str:
 def _copy_html(eyebrow: str, heading: str, description: str) -> str:
     return (
         "<div>"
-        f'<p class="mb-[18px] w-fit rounded-full bg-kv-blue-soft px-3.5 py-2 text-[0.78rem] '
-        f'font-extrabold uppercase tracking-[0.08em] text-kv-blue-ink">{eyebrow}</p>'
+        f'<p class="mb-[18px] w-fit rounded-full bg-konverter-blue-soft px-3.5 py-2 text-[0.78rem] '
+        f'font-extrabold uppercase tracking-[0.08em] text-konverter-blue-ink">{eyebrow}</p>'
         f'<h1 class="m-0 max-w-[760px] p-0 text-[clamp(2.35rem,6vw,4.8rem)] font-bold leading-[0.96] '
-        f'tracking-[-0.06em] text-kv-ink">{heading}</h1>'
-        f'<p class="mt-6 mb-0 max-w-[540px] text-[1.08rem] leading-[1.7] text-kv-muted">{description}</p>'
+        f'tracking-[-0.06em] text-konverter-ink">{heading}</h1>'
+        f'<p class="mt-6 mb-0 max-w-[540px] text-[1.08rem] leading-[1.7] text-konverter-muted">{description}</p>'
         "</div>"
     )
 
@@ -118,9 +133,9 @@ def _steps_html(active: int) -> str:
     for index, label in enumerate(labels):
         is_active = index + 1 == active
         item_classes = (
-            "bg-kv-blue-soft text-kv-blue-ink" if is_active else "bg-kv-panel text-kv-subtle"
+            "bg-konverter-blue-soft text-konverter-blue-ink" if is_active else "bg-konverter-panel text-konverter-subtle"
         )
-        badge_classes = "bg-kv-blue text-white" if is_active else "bg-kv-circle"
+        badge_classes = "bg-konverter-blue text-white" if is_active else "bg-konverter-circle"
         items.append(
             f'<li class="flex items-center gap-2 rounded-2xl px-3 py-[10px] text-[0.82rem] '
             f'font-extrabold {item_classes}">'
@@ -132,37 +147,37 @@ def _steps_html(active: int) -> str:
 
 
 def _feature_html() -> str:
-    article_classes = "rounded-3xl bg-kv-navy p-[22px] text-white"
+    article_classes = "rounded-3xl bg-konverter-navy p-[22px] text-white"
     return (
         '<section class="mt-5 grid grid-cols-3 gap-[18px] max-[780px]:grid-cols-1" aria-label="Fitur aplikasi">'
-        f'<article class="{article_classes}"><span class="font-black text-kv-skyline">01</span>'
+        f'<article class="{article_classes}"><span class="font-black text-konverter-skyline">01</span>'
         '<h2 class="mt-4 mb-2.5 text-[1.1rem] text-white">PDF ke Excel</h2>'
-        '<p class="m-0 leading-[1.6] text-kv-card-ink">Membaca tabel dari PDF dan menggabungkan hasilnya dalam satu sheet Excel.</p></article>'
-        f'<article class="{article_classes}"><span class="font-black text-kv-skyline">02</span>'
+        '<p class="m-0 leading-[1.6] text-konverter-card-ink">Membaca tabel dari PDF dan menggabungkan hasilnya dalam satu sheet Excel.</p></article>'
+        f'<article class="{article_classes}"><span class="font-black text-konverter-skyline">02</span>'
         '<h2 class="mt-4 mb-2.5 text-[1.1rem] text-white">CSV ke Excel</h2>'
-        '<p class="m-0 leading-[1.6] text-kv-card-ink">Mendeteksi pemisah koma atau titik koma secara otomatis.</p></article>'
-        f'<article class="{article_classes}"><span class="font-black text-kv-skyline">03</span>'
+        '<p class="m-0 leading-[1.6] text-konverter-card-ink">Mendeteksi pemisah koma atau titik koma secara otomatis.</p></article>'
+        f'<article class="{article_classes}"><span class="font-black text-konverter-skyline">03</span>'
         '<h2 class="mt-4 mb-2.5 text-[1.1rem] text-white">Pratinjau Sebelum Konversi</h2>'
-        '<p class="m-0 leading-[1.6] text-kv-card-ink">Cek isi file (kolom, baris, jumlah halaman) sebelum proses konversi berjalan.</p></article>'
+        '<p class="m-0 leading-[1.6] text-konverter-card-ink">Cek isi file (kolom, baris, jumlah halaman) sebelum proses konversi berjalan.</p></article>'
         "</section>"
     )
 
 
 def _limit_banner_html(user, limit_mb: int) -> str:
     base_classes = (
-        "my-1.5 rounded-2xl border px-4 py-3 text-[0.9rem] leading-[1.55] text-kv-body"
+        "my-1.5 rounded-2xl border px-4 py-3 text-[0.9rem] leading-[1.55] text-konverter-body"
     )
     if user:
         return (
-            f'<div class="{base_classes} border-[#bfe3c8] bg-[#f1fbf4]">'
+            f'<div class="{base_classes} border-konverter-success-border bg-konverter-success-soft">'
             f'<strong>{_escape_html(user.get("email") or "Pengguna")}</strong> · '
             f"batas unggahan <strong>{limit_mb} MB</strong> · hasil otomatis tersimpan di riwayat."
             "</div>"
         )
 
     return (
-        f'<div class="{base_classes} border-kv-blue-soft bg-[#f2f6ff]">'
-        '<span class="rounded-full bg-kv-navy px-2.5 py-[3px] text-[0.72rem] font-extrabold '
+        f'<div class="{base_classes} border-konverter-info-border bg-konverter-info-soft">'
+        '<span class="rounded-full bg-konverter-navy px-2.5 py-[3px] text-[0.72rem] font-extrabold '
         'tracking-[0.03em] text-white">Mode tamu</span> '
         f"Batas unggahan <strong>{limit_mb} MB</strong> · file langsung dihapus setelah dikonversi. "
         f"Masuk untuk batas <strong>{USER_MAX_MB} MB</strong> dan riwayat konversi."
@@ -172,12 +187,11 @@ def _limit_banner_html(user, limit_mb: int) -> str:
 
 def _tool_card_html(icon: str, title: str, description: str) -> str:
     return (
-        '<article class="kv-tool-card rounded-[22px] border border-kv-border bg-white p-5 '
-        'shadow-[0_12px_30px_rgba(55,76,118,0.08)]">'
-        '<span class="inline-grid min-w-[52px] place-items-center rounded-xl bg-kv-blue-soft '
-        f'px-2.5 py-[7px] text-[0.76rem] font-black tracking-[0.04em] text-kv-blue-ink">{icon}</span>'
-        f'<h3 class="mt-3.5 mb-2 text-[1.05rem] text-kv-ink">{title}</h3>'
-        f'<p class="m-0 text-[0.9rem] leading-[1.6] text-kv-muted">{description}</p>'
+        '<article class="konverter-tool-card rounded-[22px] p-5">'
+        '<span class="inline-grid min-w-[52px] place-items-center rounded-xl bg-konverter-blue-soft '
+        f'px-2.5 py-[7px] text-[0.76rem] font-black tracking-[0.04em] text-konverter-blue-ink">{icon}</span>'
+        f'<h3 class="mt-3.5 mb-2 text-[1.05rem] text-konverter-ink">{title}</h3>'
+        f'<p class="m-0 text-[0.9rem] leading-[1.6] text-konverter-muted">{description}</p>'
         "</article>"
     )
 
@@ -185,16 +199,16 @@ def _tool_card_html(icon: str, title: str, description: str) -> str:
 def _render_tool_cards() -> None:
     options = (
         (
-            "kv-tool-pdf",
-            "kv-pick-pdf",
+            "konverter-tool-pdf",
+            "konverter-pick-pdf",
             "PDF",
             "PDF ke Excel",
             "Gabungkan tabel dari seluruh halaman menjadi satu sheet Excel.",
             "pdf",
         ),
         (
-            "kv-tool-csv",
-            "kv-pick-csv",
+            "konverter-tool-csv",
+            "konverter-pick-csv",
             "CSV",
             "CSV ke Excel",
             "Deteksi pemisah otomatis, langsung jadi .xlsx yang rapi.",
@@ -213,14 +227,14 @@ def _render_tool_cards() -> None:
 def _preview_html(kind: str, data: dict, filename: str, size_bytes: int) -> str:
     parts = [
         '<div class="mt-1.5 flex flex-wrap items-center gap-2">',
-        f'<span class="rounded-full bg-kv-navy px-3 py-1.5 text-[0.8rem] font-extrabold text-white '
+        f'<span class="rounded-full bg-konverter-navy px-3 py-1.5 text-[0.8rem] font-extrabold text-white '
         f'[overflow-wrap:anywhere]">{_escape_html(filename)}</span>',
     ]
 
     if kind == "csv-to-excel":
         rows = data["sample_rows"]
         parts.append(
-            f'<span class="text-[0.84rem] font-bold text-kv-muted">'
+            f'<span class="text-[0.84rem] font-bold text-konverter-muted">'
             f'{_format_bytes(size_bytes)} · {data["row_count"]} baris</span>'
         )
         parts.append("</div>")
@@ -241,7 +255,7 @@ def _preview_html(kind: str, data: dict, filename: str, size_bytes: int) -> str:
             rows = normalized
 
         parts.append(
-            f'<span class="text-[0.84rem] font-bold text-kv-muted">'
+            f'<span class="text-[0.84rem] font-bold text-konverter-muted">'
             f'{_format_bytes(size_bytes)} · {data["page_count"]} halaman</span>'
         )
         parts.append("</div>")
@@ -249,7 +263,7 @@ def _preview_html(kind: str, data: dict, filename: str, size_bytes: int) -> str:
         estimate = int(data.get("estimated_seconds") or 0)
         if estimate > 0:
             parts.append(
-                f'<p class="mt-2.5 mb-0 text-[0.84rem] font-bold text-kv-blue">'
+                f'<p class="mt-2.5 mb-0 text-[0.84rem] font-bold text-konverter-info-ink">'
                 f"Perkiraan waktu konversi: ± {format_interval(estimate)}</p>"
             )
 
@@ -260,7 +274,7 @@ def _preview_html(kind: str, data: dict, filename: str, size_bytes: int) -> str:
         )
 
     parts.append(table)
-    parts.append(f'<p class="m-0 text-[0.8rem] text-kv-subtle">{_escape_html(caption)}</p>')
+    parts.append(f'<p class="m-0 text-[0.8rem] text-konverter-subtle">{_escape_html(caption)}</p>')
     return "".join(parts)
 
 
@@ -271,35 +285,70 @@ def _overlay_html(percent, message, eta, elapsed) -> str:
 
     if percent >= 100:
         eta_line = (
-            f'<p class="mt-2.5 mb-1 text-[0.82rem] font-semibold text-kv-faint">'
+            f'<p class="mt-2.5 mb-1 text-[0.82rem] font-semibold text-konverter-faint">'
             f"Selesai dalam {format_interval(elapsed)}</p>"
         )
     elif eta is not None and eta >= 0:
         eta_line = (
-            f'<p class="mt-2.5 mb-1 text-[0.82rem] font-semibold text-kv-faint">'
+            f'<p class="mt-2.5 mb-1 text-[0.82rem] font-semibold text-konverter-faint">'
             f"± {format_interval(eta)} tersisa</p>"
         )
 
     if percent < 100 and elapsed and elapsed > 0:
         running_line = (
-            '<p class="mt-0 mb-5 text-[0.82rem] font-semibold text-kv-faint">'
+            '<p class="mt-0 mb-5 text-[0.82rem] font-semibold text-konverter-faint">'
             f"berjalan {format_interval(elapsed)}</p>"
         )
 
     return (
-        '<div class="fixed inset-0 z-[99999] grid place-items-center bg-[rgba(11,18,34,0.55)] p-5">'
-        '<div class="w-[min(430px,100%)] rounded-[26px] bg-white p-[26px] text-left shadow-[0_26px_60px_rgba(8,15,32,0.35)]" '
+        '<div class="fixed inset-0 z-[99999] grid place-items-center bg-konverter-overlay p-5">'
+        '<div class="w-[min(430px,100%)] rounded-[26px] bg-konverter-card p-[26px] text-left shadow-[0_26px_60px_rgba(8,15,32,0.35)]" '
         'role="dialog" aria-modal="true">'
-        '<h2 class="m-0 p-0 text-[1.24rem] tracking-[-0.02em] text-kv-ink">Memproses file</h2>'
-        f'<p class="mt-2.5 mb-5 text-[0.94rem] text-kv-muted">{_escape_html(message or "Memproses file")}</p>'
+        '<h2 class="m-0 p-0 text-[1.24rem] tracking-[-0.02em] text-konverter-ink">Memproses file</h2>'
+        f'<p class="mt-2.5 mb-5 text-[0.94rem] text-konverter-muted">{_escape_html(message or "Memproses file")}</p>'
         f"{eta_line}{running_line}"
-        '<div class="h-3 overflow-hidden rounded-full bg-kv-track">'
+        '<div class="h-3 overflow-hidden rounded-full bg-konverter-track">'
         '<div class="h-full rounded-[inherit] bg-gradient-to-r from-[#1b49d8] to-[#4b8bff] '
         f'transition-[width] duration-300 ease-out" style="width:{percent}%"></div>'
         "</div>"
-        f'<p class="mt-3 mb-0 text-[0.9rem] font-extrabold text-kv-navy">{percent}%</p>'
+        f'<p class="mt-3 mb-0 text-[0.9rem] font-extrabold text-konverter-emphasis">{percent}%</p>'
         "</div></div>"
     )
+
+
+def _boot_html() -> str:
+    return (
+        '<div class="konverter-boot" role="status" aria-live="polite">'
+        '<div class="konverter-boot-card">'
+        '<span class="konverter-boot-spinner" aria-hidden="true"></span>'
+        '<p class="konverter-boot-title">Memulihkan sesi…</p>'
+        '<p class="konverter-boot-text">Menyiapkan akun dan riwayat konversimu.</p>'
+        "</div></div>"
+    )
+
+
+def _boot_user():
+    session_state = streamlit.session_state
+
+    if session_state.get("konverter_booted"):
+        return store.current_user()
+
+    splash = streamlit.empty()
+    splash.markdown(_boot_html(), unsafe_allow_html=True)
+    started = time.perf_counter()
+
+    try:
+        user = store.current_user()
+    except Exception:
+        user = None
+
+    remaining = 0.45 - (time.perf_counter() - started)
+    if remaining > 0:
+        time.sleep(remaining)
+
+    session_state["konverter_booted"] = True
+    splash.empty()
+    return user
 
 
 def _status_label(status: str) -> str:
@@ -359,22 +408,40 @@ def _cached_preview(kind: str, path: str, size: int, modification_time_nanosecon
 
 
 def _navigate(page: str) -> None:
-    streamlit.session_state["kv_page"] = page
+    streamlit.session_state["konverter_page"] = page
     streamlit.rerun()
 
 
 def _brand_html() -> str:
     return (
-        '<div class="kv-brand">'
+        '<div class="konverter-brand">'
         '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" '
-        'stroke-width="1.5" stroke="currentColor" class="kv-brand-icon">'
+        'stroke-width="1.5" stroke="currentColor" class="konverter-brand-icon">'
         '<path stroke-linecap="round" stroke-linejoin="round" '
         'd="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>'
         '</svg>'
-        '<span class="kv-brand-text">'
-        '<span class="kv-brand-name">Konverter</span>'
-        '<span class="kv-brand-sub">PDF &amp; CSV → Excel</span>'
+        '<span class="konverter-brand-text">'
+        '<span class="konverter-brand-name">Konverter</span>'
+        '<span class="konverter-brand-sub">PDF &amp; CSV → Excel</span>'
         '</span></div>'
+    )
+
+
+def _theme_toggle_html() -> str:
+    return (
+        '<button type="button" data-konverter-theme-toggle class="konverter-theme-toggle" '
+        'aria-label="Aktifkan tema gelap" aria-pressed="false" title="Ganti tema terang atau gelap">'
+        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" '
+        'stroke="currentColor" class="konverter-theme-icon konverter-theme-icon-moon" aria-hidden="true">'
+        '<path stroke-linecap="round" stroke-linejoin="round" '
+        'd="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"/>'
+        "</svg>"
+        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" '
+        'stroke="currentColor" class="konverter-theme-icon konverter-theme-icon-sun" aria-hidden="true">'
+        '<path stroke-linecap="round" stroke-linejoin="round" '
+        'd="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"/>'
+        "</svg>"
+        "</button>"
     )
 
 
@@ -394,7 +461,9 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
     elif not configured:
         slots.append("note")
 
-    with streamlit.container(key="kv-navbar"):
+    slots.append("theme")
+
+    with streamlit.container(key="konverter-navbar"):
         brand_col, *action_cols = streamlit.columns(
             [4] + [1] * len(slots), vertical_alignment="center", gap="small"
         )
@@ -405,22 +474,24 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
         for slot, col in zip(slots, action_cols):
             with col:
                 if slot == "back":
-                    if streamlit.button(back_label, key="kv-nav-back", width="stretch"):
+                    if streamlit.button(back_label, key="konverter-navbar-back", width="stretch"):
                         _navigate("home")
                 elif slot == "history":
-                    if streamlit.button("Riwayat", key="kv-nav-riwayat", width="stretch"):
+                    if streamlit.button("Riwayat", key="konverter-navbar-history", width="stretch"):
                         _navigate("history")
                 elif slot == "masuk":
-                    if streamlit.button("Masuk", key="kv-nav-masuk", type="primary",
+                    if streamlit.button("Masuk", key="konverter-navbar-sign-in", type="primary",
                                  width="stretch"):
                         _navigate("auth")
                 elif slot == "keluar":
-                    if streamlit.button("Keluar", key="kv-nav-keluar", width="stretch"):
+                    if streamlit.button("Keluar", key="konverter-navbar-sign-out", width="stretch"):
                         store.sign_out()
                         _navigate("home")
+                elif slot == "theme":
+                    streamlit.markdown(_theme_toggle_html(), unsafe_allow_html=True)
                 else:
                     streamlit.markdown(
-                        '<span class="kv-nav-badge">Login belum aktif</span>',
+                        '<span class="konverter-navbar-badge">Login belum aktif</span>',
                         unsafe_allow_html=True,
                     )
 
@@ -428,7 +499,7 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
 def _page_home(user, limit_mb: int) -> None:
     _brand_row(user)
 
-    with streamlit.container(key="kv-hero"):
+    with streamlit.container(key="konverter-hero"):
         streamlit.markdown(_hero_html(), unsafe_allow_html=True)
         streamlit.markdown(_limit_banner_html(user, limit_mb), unsafe_allow_html=True)
         _render_tool_cards()
@@ -449,15 +520,15 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
 
     _brand_row(user, back_label="← Kembali")
 
-    with streamlit.container(key="kv-hero"):
+    with streamlit.container(key="konverter-hero"):
         streamlit.markdown(_hero_html(subtitle), unsafe_allow_html=True)
         streamlit.markdown(_limit_banner_html(user, limit_mb), unsafe_allow_html=True)
 
-        with streamlit.container(key="kv-converter"):
-            streamlit.markdown(f'<p class="mb-3 mt-0 p-0 text-[1.15rem] font-black text-kv-ink">{_escape_html(title)}</p>', unsafe_allow_html=True)
+        with streamlit.container(key="konverter-panel"):
+            streamlit.markdown(f'<p class="mb-3 mt-0 p-0 text-[1.15rem] font-black text-konverter-ink">{_escape_html(title)}</p>', unsafe_allow_html=True)
             streamlit.markdown(_steps_html(active_step), unsafe_allow_html=True)
 
-            uploaded = streamlit.file_uploader("File sumber", type=["pdf", "csv"], key="kv-upload")
+            uploaded = streamlit.file_uploader("File sumber", type=["pdf", "csv"], key="konverter-upload")
             preview_data = None
 
             if uploaded is None:
@@ -509,14 +580,14 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
                     file_name=streamlit.session_state.get("output_name", "hasil.xlsx"),
                     mime=EXCEL_MIME,
                     type="primary",
-                    key="kv-download",
+                    key="konverter-download",
                 )
                 if user and streamlit.session_state.get("output_job"):
                     streamlit.caption("Hasil ini tersimpan di riwayat konversi akunmu.")
 
 
 def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: dict) -> None:
-    if not streamlit.button("Konversi Sekarang", type="primary", key="kv-convert"):
+    if not streamlit.button("Konversi Sekarang", type="primary", key="konverter-convert"):
         return
 
     overlay = streamlit.empty()
@@ -611,7 +682,7 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
 def _page_auth() -> None:
     _brand_row(None, back_label="← Kembali", show_login=False)
 
-    with streamlit.container(key="kv-hero"):
+    with streamlit.container(key="konverter-hero"):
         streamlit.markdown(
             _copy_html(
                 "Akun",
@@ -621,14 +692,19 @@ def _page_auth() -> None:
             unsafe_allow_html=True,
         )
 
-        with streamlit.container(key="kv-converter"):
+        with streamlit.container(key="konverter-panel"):
             tab_in, tab_up = streamlit.tabs(["Masuk", "Daftar"])
 
             with tab_in:
-                email = streamlit.text_input("Email", key="kv-in-email")
-                password = streamlit.text_input("Kata sandi", type="password", key="kv-in-password")
+                email = streamlit.text_input("Email", key="konverter-sign-in-email")
+                password = streamlit.text_input("Kata sandi", type="password", key="konverter-sign-in-password")
 
-                if streamlit.button("Masuk", type="primary", key="kv-in-submit"):
+                with streamlit.container(horizontal_alignment="right"):
+                    submitted = streamlit.button(
+                        "Masuk", type="primary", key="konverter-sign-in-submit", width="content"
+                    )
+
+                if submitted:
                     if not email or not password:
                         streamlit.warning("Isi email dan kata sandi.")
                     else:
@@ -640,10 +716,15 @@ def _page_auth() -> None:
                             _navigate("home")
 
             with tab_up:
-                email = streamlit.text_input("Email baru", key="kv-up-email")
-                password = streamlit.text_input("Kata sandi baru (min. 8 karakter)", type="password", key="kv-up-password")
+                email = streamlit.text_input("Email baru", key="konverter-sign-up-email")
+                password = streamlit.text_input("Kata sandi baru (min. 8 karakter)", type="password", key="konverter-sign-up-password")
 
-                if streamlit.button("Daftar", type="primary", key="kv-up-submit"):
+                with streamlit.container(horizontal_alignment="right"):
+                    submitted = streamlit.button(
+                        "Daftar", type="primary", key="konverter-sign-up-submit", width="content"
+                    )
+
+                if submitted:
                     if not email or len(password) < 8:
                         streamlit.warning("Isi email dan kata sandi minimal 8 karakter.")
                     else:
@@ -693,7 +774,7 @@ def _auth_error(error: Exception) -> str:
 def _page_history(user) -> None:
     _brand_row(user, back_label="← Kembali ke alat", show_history=False)
 
-    with streamlit.container(key="kv-hero"):
+    with streamlit.container(key="konverter-hero"):
         streamlit.markdown(
             _copy_html(
                 "Riwayat",
@@ -703,7 +784,7 @@ def _page_history(user) -> None:
             unsafe_allow_html=True,
         )
 
-        with streamlit.container(key="kv-converter"):
+        with streamlit.container(key="konverter-panel"):
             jobs = store.list_jobs(user["id"])
 
             if not jobs:
@@ -722,18 +803,18 @@ def _render_job(job: dict, user) -> None:
         facts.append(f"{job['row_count']} baris")
 
     status_classes = {
-        "completed": "bg-kv-success-soft text-kv-success",
-        "processing": "bg-kv-warn-soft text-kv-warn",
-        "failed": "bg-[#ffe9ec] text-kv-danger",
-    }.get(status, "bg-kv-th text-kv-muted")
+        "completed": "bg-konverter-success-soft text-konverter-success",
+        "processing": "bg-konverter-warn-soft text-konverter-warn",
+        "failed": "bg-konverter-danger-soft text-konverter-danger",
+    }.get(status, "bg-konverter-th text-konverter-muted")
 
     streamlit.markdown(
         '<div class="flex flex-wrap items-center gap-2.5 py-3">'
         f'<span class="rounded-full px-2.5 py-[5px] text-[0.72rem] font-black tracking-[0.03em] '
         f'{status_classes}">{_escape_html(_status_label(status))}</span>'
-        f'<span class="font-extrabold text-kv-ink [overflow-wrap:anywhere]">'
+        f'<span class="font-extrabold text-konverter-ink [overflow-wrap:anywhere]">'
         f'{_escape_html(job.get("original_name") or "-")}</span>'
-        f'<span class="text-[0.84rem] font-bold text-kv-muted">'
+        f'<span class="text-[0.84rem] font-bold text-konverter-muted">'
         f'{" · ".join(_escape_html(item) for item in facts)}</span>'
         "</div>",
         unsafe_allow_html=True,
@@ -750,8 +831,8 @@ def _render_job(job: dict, user) -> None:
     with actions[1]:
         with streamlit.popover("Hapus"):
             streamlit.write("Hapus konversi ini beserta filenya?")
-            if streamlit.button("Ya, hapus", key=f"kv-del-confirm-{job['id']}"):
-                streamlit.session_state.pop(f"kv-dl-data-{job['id']}", None)
+            if streamlit.button("Ya, hapus", key=f"konverter-delete-confirm-{job['id']}"):
+                streamlit.session_state.pop(f"konverter-download-data-{job['id']}", None)
                 store.delete_job(user["id"], job)
                 streamlit.rerun()
 
@@ -767,11 +848,11 @@ def _render_download(job: dict) -> None:
         streamlit.link_button("Unduh", download_url)
         return
 
-    cache_key = f"kv-dl-data-{job['id']}"
+    cache_key = f"konverter-download-data-{job['id']}"
     data = streamlit.session_state.get(cache_key)
 
     if not data:
-        if streamlit.button("Siapkan unduhan", key=f"kv-dl-prep-{job['id']}"):
+        if streamlit.button("Siapkan unduhan", key=f"konverter-download-prepare-{job['id']}"):
             with streamlit.spinner("Menyiapkan file..."):
                 data = store.download_bytes(store.RESULT_BUCKET, job["result_path"])
 
@@ -787,16 +868,16 @@ def _render_download(job: dict) -> None:
         data=data,
         file_name=job.get("result_name") or "hasil.xlsx",
         mime=EXCEL_MIME,
-        key=f"kv-dl-btn-{job['id']}",
+        key=f"konverter-download-button-{job['id']}",
     )
 
 
-user = store.current_user()
+user = _boot_user()
 
-if user is None and streamlit.session_state.get("kv_page") == "history":
-    streamlit.session_state["kv_page"] = "auth"
+if user is None and streamlit.session_state.get("konverter_page") == "history":
+    streamlit.session_state["konverter_page"] = "auth"
 
-page = streamlit.session_state.setdefault("kv_page", "home")
+page = streamlit.session_state.setdefault("konverter_page", "home")
 limit_mb = USER_MAX_MB if user else GUEST_MAX_MB
 
 if page in ("pdf", "csv"):

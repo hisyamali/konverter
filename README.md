@@ -67,9 +67,10 @@ npm run watch:css:streamlit  # rebuild otomatis saat mengembangkan UI Streamlit
 Sumber Tailwind:
 
 - `flask_app/static/css/tailwind.shared.css` — token desain (`@theme`) dan utility brand, dipakai bersama.
+- `flask_app/static/css/theme.css` — token warna terang/gelap bersama (`light-dark()`), gradasi, bayangan, dan warna level log.
 - `flask_app/static/css/tailwind.src.css` — input UI Flask (preflight penuh). `@source` mengarah ke `flask_app/templates` dan `flask_app/static/js`.
 - `flask_app/static/css/tailwind.streamlit.src.css` — input UI Streamlit (tanpa preflight, utility `!important`). `@source` mengarah ke `streamlit_app.py`.
-- `flask_app/static/css/streamlit.css` — jembatan untuk menata DOM milik Streamlit (widget, container `kv-hero`/`kv-converter`, tombol).
+- `flask_app/static/css/streamlit.css` — jembatan untuk menata DOM milik Streamlit (widget, container `konverter-hero`/`konverter-panel`, tombol).
 
 Karena utility dipindai dari sumber, class yang dirangkai dinamis di Python/JS harus muncul utuh di file sumber (tidak boleh digabung dari potongan string). CI `.github/workflows/css-build.yml` menolak PR bila CSS hasil build tidak sinkron dengan sumber.
 

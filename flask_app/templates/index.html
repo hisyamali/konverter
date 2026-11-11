@@ -5,93 +5,94 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#16213e">
     <title>Konverter PDF/CSV ke Excel</title>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}?v=20261103-tailwind">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}?v=20261111-theme">
 </head>
-<body class="kv-app-bg min-h-screen font-sans text-kv-ink">
+<body class="konverter-app-background min-h-screen font-sans text-konverter-ink">
     {% include "_navbar.html" %}
     <main class="mx-auto w-[min(1100px,100%-32px)] py-12 max-[780px]:w-[min(100%-22px,560px)] max-[780px]:py-[18px]">
 
-        <section class="grid min-h-[520px] grid-cols-1 items-start gap-7 rounded-[34px] bg-white/[0.82] p-[42px] shadow-[0_24px_70px_rgba(34,54,96,0.16)] backdrop-blur-[18px] max-[780px]:min-h-0 max-[780px]:rounded-[28px] max-[780px]:p-6">
+        <section class="grid min-h-[520px] grid-cols-1 items-start gap-7 rounded-[34px] bg-konverter-card/85 p-[42px] shadow-[0_24px_70px_rgba(34,54,96,0.16)] backdrop-blur-[18px] max-[780px]:min-h-0 max-[780px]:rounded-[28px] max-[780px]:p-6">
 
             <div class="min-w-0">
-                <p class="mb-[18px] w-fit rounded-full bg-kv-blue-soft px-3.5 py-2 text-[0.78rem] font-extrabold uppercase tracking-[0.08em] text-kv-blue-ink">Web &amp; Mobile Converter</p>
+                <p class="mb-[18px] w-fit rounded-full bg-konverter-blue-soft px-3.5 py-2 text-[0.78rem] font-extrabold uppercase tracking-[0.08em] text-konverter-blue-ink">Web &amp; Mobile Converter</p>
                 <h1 class="m-0 max-w-[760px] text-[clamp(2.35rem,6vw,4.8rem)] font-bold leading-[0.96] tracking-[-0.06em] max-[780px]:max-w-full">Ubah PDF atau CSV menjadi Excel dalam beberapa detik.</h1>
-                <p class="mt-6 mb-0 max-w-[540px] text-[1.08rem] leading-[1.7] text-kv-muted">Upload file, lihat pratinjau, lalu konversi dan download hasilnya sebagai file .xlsx.</p>
+                <p class="mt-6 mb-0 max-w-[540px] text-[1.08rem] leading-[1.7] text-konverter-muted">Upload file, lihat pratinjau, lalu konversi dan download hasilnya sebagai file .xlsx.</p>
             </div>
 
-            <div class="converter-card grid w-full max-w-full gap-3.5 overflow-visible rounded-[26px] border border-kv-border bg-white p-[26px] shadow-[0_18px_48px_rgba(55,76,118,0.12)] max-[780px]:p-[18px]">
+            <div class="converter-card grid w-full max-w-full gap-3.5 overflow-visible rounded-[26px] border border-konverter-border bg-konverter-card p-[26px] shadow-[0_18px_48px_rgba(55,76,118,0.12)] max-[780px]:p-[18px]">
                 <ol class="steps m-0 mb-1.5 grid list-none grid-cols-2 gap-2 p-0 max-[780px]:grid-cols-1" aria-label="Langkah">
-                    <li id="step-upload" class="step is-active flex items-center gap-2 rounded-2xl bg-kv-panel px-3 py-[10px] text-[0.82rem] font-extrabold text-kv-subtle"><span class="grid size-[22px] place-items-center rounded-full bg-kv-circle text-[0.78rem]">1</span> Unggah &amp; pratinjau</li>
-                    <li id="step-convert" class="step flex items-center gap-2 rounded-2xl bg-kv-panel px-3 py-[10px] text-[0.82rem] font-extrabold text-kv-subtle"><span class="grid size-[22px] place-items-center rounded-full bg-kv-circle text-[0.78rem]">2</span> Konversi</li>
+                    <li id="step-upload" class="step is-active flex items-center gap-2 rounded-2xl bg-konverter-panel px-3 py-[10px] text-[0.82rem] font-extrabold text-konverter-subtle"><span class="grid size-[22px] place-items-center rounded-full bg-konverter-circle text-[0.78rem]">1</span> Unggah &amp; pratinjau</li>
+                    <li id="step-convert" class="step flex items-center gap-2 rounded-2xl bg-konverter-panel px-3 py-[10px] text-[0.82rem] font-extrabold text-konverter-subtle"><span class="grid size-[22px] place-items-center rounded-full bg-konverter-circle text-[0.78rem]">2</span> Konversi</li>
                 </ol>
 
-                <label for="conversion_type" class="font-extrabold text-kv-heading">Jenis konversi</label>
-                <select id="conversion_type" name="conversion_type" required class="min-h-[52px] w-full rounded-2xl border border-kv-line bg-kv-surface px-3.5 py-[13px] text-[#172033] [font:inherit]">
+                <label for="conversion_type" class="font-extrabold text-konverter-heading">Jenis konversi</label>
+                <select id="conversion_type" name="conversion_type" required class="min-h-[52px] w-full rounded-2xl border border-konverter-line bg-konverter-surface px-3.5 py-[13px] text-konverter-input [font:inherit]">
                     <option value="pdf-to-excel">PDF ke Excel</option>
                     <option value="csv-to-excel">CSV ke Excel</option>
                 </select>
 
-                <label for="file" class="font-extrabold text-kv-heading">File sumber</label>
-                <input id="file" type="file" name="file" accept=".csv,.pdf" required class="min-h-[52px] w-full rounded-2xl border border-kv-line bg-kv-surface px-3.5 py-[13px] font-bold text-[#172033] [font:inherit]">
-                <p id="preview-status" class="preview-status m-0 rounded-2xl bg-[#eef4ff] px-3.5 py-3 text-[0.9rem] font-bold text-kv-blue-ink" hidden></p>
+                <label for="file" class="font-extrabold text-konverter-heading">File sumber</label>
+                <input id="file" type="file" name="file" accept=".csv,.pdf" required class="min-h-[52px] w-full rounded-2xl border border-konverter-line bg-konverter-surface px-3.5 py-[13px] font-bold text-konverter-input [font:inherit]">
+                <p id="preview-status" class="preview-status m-0 rounded-2xl bg-konverter-info-soft px-3.5 py-3 text-[0.9rem] font-bold text-konverter-info-ink" hidden></p>
 
                 <div id="preview-panel" class="grid min-w-0 max-w-full gap-3" hidden>
                     <div class="preview-meta flex flex-wrap items-center gap-2">
-                        <span id="preview-filename" class="preview-badge rounded-full bg-kv-navy px-3 py-1.5 text-[0.8rem] font-extrabold text-white [overflow-wrap:anywhere]" hidden></span>
-                        <span id="preview-facts" class="text-[0.84rem] font-bold text-kv-muted"></span>
+                        <span id="preview-filename" class="preview-badge rounded-full bg-konverter-navy px-3 py-1.5 text-[0.8rem] font-extrabold text-white [overflow-wrap:anywhere]" hidden></span>
+                        <span id="preview-facts" class="text-[0.84rem] font-bold text-konverter-muted"></span>
                     </div>
-                    <p id="preview-estimate" class="mt-2.5 mb-0 text-[0.84rem] font-bold text-kv-blue" hidden></p>
-                    <div class="preview-table-scroll max-h-[300px] min-w-0 w-full max-w-full overflow-auto rounded-2xl border border-kv-border bg-white [scrollbar-gutter:stable]">
-                        <table class="preview-table w-full table-fixed border-collapse text-[0.82rem] [&_td]:overflow-hidden [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_td]:border-t [&_td]:border-[#eef2f7] [&_td]:px-2.5 [&_td]:py-2 [&_td]:text-kv-body [&_th]:overflow-hidden [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:bg-kv-th [&_th]:px-2.5 [&_th]:py-[9px] [&_th]:text-left [&_th]:font-extrabold [&_th]:text-kv-heading">
+                    <p id="preview-estimate" class="mt-2.5 mb-0 text-[0.84rem] font-bold text-konverter-info-ink" hidden></p>
+                    <div class="preview-table-scroll max-h-[300px] min-w-0 w-full max-w-full overflow-auto rounded-2xl border border-konverter-border bg-konverter-card [scrollbar-gutter:stable]">
+                        <table class="preview-table w-full table-fixed border-collapse text-[0.82rem] [&_td]:overflow-hidden [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_td]:border-t [&_td]:border-konverter-border [&_td]:px-2.5 [&_td]:py-2 [&_td]:text-konverter-body [&_th]:overflow-hidden [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:bg-konverter-th [&_th]:px-2.5 [&_th]:py-[9px] [&_th]:text-left [&_th]:font-extrabold [&_th]:text-konverter-heading">
                             <thead id="preview-head" class="sticky top-0 z-[1]"></thead>
                             <tbody id="preview-body"></tbody>
                         </table>
                     </div>
-                    <p id="preview-caption" class="m-0 text-[0.8rem] text-kv-subtle"></p>
+                    <p id="preview-caption" class="m-0 text-[0.8rem] text-konverter-subtle"></p>
                 </div>
 
-                <button id="submit-button" type="button" disabled class="kv-cta mt-2 min-h-14 w-full cursor-pointer rounded-[18px] border-0 font-extrabold text-white shadow-[0_16px_36px_rgba(27,73,216,0.28)] transition-transform [font:inherit] hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-60">Konversi Sekarang</button>
+                <button id="submit-button" type="button" disabled class="konverter-call-to-action mt-2 min-h-14 w-full cursor-pointer rounded-[18px] border-0 font-extrabold text-white shadow-[0_16px_36px_rgba(27,73,216,0.28)] transition-transform [font:inherit] hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-60">Konversi Sekarang</button>
 
                 <noscript>
-                    <p class="preview-status m-0 rounded-2xl bg-[#eef4ff] px-3.5 py-3 text-[0.9rem] font-bold text-kv-blue-ink">JavaScript diperlukan untuk alur 2 langkah (unggah → pratinjau → konversi).</p>
+                    <p class="preview-status m-0 rounded-2xl bg-konverter-info-soft px-3.5 py-3 text-[0.9rem] font-bold text-konverter-info-ink">JavaScript diperlukan untuk alur 2 langkah (unggah → pratinjau → konversi).</p>
                 </noscript>
             </div>
         </section>
 
         <section class="mt-5 grid grid-cols-3 gap-[18px] max-[780px]:grid-cols-1" aria-label="Fitur aplikasi">
-            <article class="rounded-3xl bg-kv-navy p-[22px] text-white">
-                <span class="font-black text-kv-skyline">01</span>
+            <article class="rounded-3xl bg-konverter-navy p-[22px] text-white">
+                <span class="font-black text-konverter-skyline">01</span>
                 <h2 class="mt-4 mb-2.5 text-[1.1rem] font-bold">PDF ke Excel</h2>
-                <p class="m-0 leading-[1.6] text-kv-card-ink">Membaca tabel dari PDF dan menggabungkan hasilnya dalam satu sheet Excel.</p>
+                <p class="m-0 leading-[1.6] text-konverter-card-ink">Membaca tabel dari PDF dan menggabungkan hasilnya dalam satu sheet Excel.</p>
             </article>
-            <article class="rounded-3xl bg-kv-navy p-[22px] text-white">
-                <span class="font-black text-kv-skyline">02</span>
+            <article class="rounded-3xl bg-konverter-navy p-[22px] text-white">
+                <span class="font-black text-konverter-skyline">02</span>
                 <h2 class="mt-4 mb-2.5 text-[1.1rem] font-bold">CSV ke Excel</h2>
-                <p class="m-0 leading-[1.6] text-kv-card-ink">Mendeteksi pemisah koma atau titik koma secara otomatis.</p>
+                <p class="m-0 leading-[1.6] text-konverter-card-ink">Mendeteksi pemisah koma atau titik koma secara otomatis.</p>
             </article>
-            <article class="rounded-3xl bg-kv-navy p-[22px] text-white">
-                <span class="font-black text-kv-skyline">03</span>
+            <article class="rounded-3xl bg-konverter-navy p-[22px] text-white">
+                <span class="font-black text-konverter-skyline">03</span>
                 <h2 class="mt-4 mb-2.5 text-[1.1rem] font-bold">Pratinjau Sebelum Konversi</h2>
-                <p class="m-0 leading-[1.6] text-kv-card-ink">Cek isi file (kolom, baris, jumlah halaman) sebelum proses konversi berjalan.</p>
+                <p class="m-0 leading-[1.6] text-konverter-card-ink">Cek isi file (kolom, baris, jumlah halaman) sebelum proses konversi berjalan.</p>
             </article>
         </section>
     </main>
 
     <div id="loading-overlay" class="loading-overlay fixed inset-0 z-50 grid place-items-center bg-[rgba(11,18,34,0.55)] p-5" hidden>
-        <div class="w-[min(430px,100%)] rounded-[26px] bg-white p-[26px] text-left shadow-[0_26px_60px_rgba(8,15,32,0.35)]" role="dialog" aria-modal="true" aria-labelledby="loading-title">
+        <div class="w-[min(430px,100%)] rounded-[26px] bg-konverter-card p-[26px] text-left shadow-[0_26px_60px_rgba(8,15,32,0.35)]" role="dialog" aria-modal="true" aria-labelledby="loading-title">
             <h2 id="loading-title" class="m-0 text-[1.24rem] font-bold tracking-[-0.02em]">Memproses file</h2>
-            <p id="loading-message" class="mt-2.5 mb-5 text-[0.94rem] text-kv-muted">Menyiapkan file</p>
-            <p id="loading-eta" class="mt-2.5 mb-1 text-[0.82rem] font-semibold text-kv-faint" hidden></p>
-            <p id="loading-eta-running" class="mt-0 mb-5 text-[0.82rem] font-semibold text-kv-faint" hidden></p>
+            <p id="loading-message" class="mt-2.5 mb-5 text-[0.94rem] text-konverter-muted">Menyiapkan file</p>
+            <p id="loading-eta" class="mt-2.5 mb-1 text-[0.82rem] font-semibold text-konverter-faint" hidden></p>
+            <p id="loading-eta-running" class="mt-0 mb-5 text-[0.82rem] font-semibold text-konverter-faint" hidden></p>
 
-            <div class="h-3 overflow-hidden rounded-full bg-kv-track" role="progressbar" aria-labelledby="loading-title" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
+            <div class="h-3 overflow-hidden rounded-full bg-konverter-track" role="progressbar" aria-labelledby="loading-title" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
                 <div id="progress-bar" class="progress-bar h-full w-0 rounded-[inherit] bg-gradient-to-r from-[#1b49d8] to-[#4b8bff] transition-[width] duration-300 ease-out"></div>
             </div>
 
-            <p class="mt-3 mb-0 text-[0.9rem] font-extrabold text-kv-navy"><span id="progress-percent">0</span>%</p>
-            <p id="loading-error" class="mt-4 mb-0 rounded-2xl bg-kv-danger-soft px-3.5 py-3 text-[0.9rem] font-bold text-kv-danger" hidden></p>
-            <button id="loading-close" class="mt-3.5 min-h-12 w-full cursor-pointer rounded-2xl border-0 bg-kv-navy font-extrabold text-white [font:inherit]" type="button" hidden>Tutup</button>
+            <p class="mt-3 mb-0 text-[0.9rem] font-extrabold text-konverter-emphasis"><span id="progress-percent">0</span>%</p>
+            <p id="loading-error" class="mt-4 mb-0 rounded-2xl bg-konverter-danger-soft px-3.5 py-3 text-[0.9rem] font-bold text-konverter-danger" hidden></p>
+            <button id="loading-close" class="mt-3.5 min-h-12 w-full cursor-pointer rounded-2xl border-0 bg-konverter-navy font-extrabold text-white [font:inherit]" type="button" hidden>Tutup</button>
         </div>
     </div>
 

@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#16213e">
     <title>{% block title %}Konverter{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}?v=20261111-theme">
     {% block head %}{% endblock %}
 </head>
-<body class="kv-app-bg min-h-screen font-sans text-[0.9rem] text-kv-ink">
+<body class="konverter-app-background min-h-screen font-sans text-[0.9rem] text-konverter-ink">
     {% include "_navbar.html" %}
     <div class="mx-auto w-full max-w-[1600px] px-4">
         {% block content %}{% endblock %}
