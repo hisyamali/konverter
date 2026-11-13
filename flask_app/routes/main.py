@@ -219,7 +219,13 @@ def convert():
             if conversion_type == "csv-to-excel":
                 convert_csv_to_excel(input_path, output_path, progress_reporter)
             else:
-                convert_pdf_to_excel(input_path, output_path, progress_reporter, total_pages=page_count)
+                convert_pdf_to_excel(
+                    input_path,
+                    output_path,
+                    progress_reporter,
+                    total_pages=page_count,
+                    strategy=preview.get("meta", {}).get("strategy"),
+                )
 
             if output_path.exists():
                 output_size = output_path.stat().st_size

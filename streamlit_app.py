@@ -635,7 +635,13 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
             if kind == "csv-to-excel":
                 convert_csv_to_excel(input_path, output_path, reporter)
             else:
-                convert_pdf_to_excel(input_path, output_path, reporter, total_pages=page_count)
+                convert_pdf_to_excel(
+                    input_path,
+                    output_path,
+                    reporter,
+                    total_pages=page_count,
+                    strategy=preview_data.get("strategy"),
+                )
 
         result_bytes = Path(output_path).read_bytes()
         streamlit.session_state["output_bytes"] = result_bytes

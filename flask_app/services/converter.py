@@ -4,6 +4,7 @@ import os
 import re
 import time
 import weakref
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, TimeoutError, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from decimal import Decimal, InvalidOperation
@@ -14,20 +15,25 @@ from flask import current_app, has_app_context
 from openpyxl import Workbook
 
 from flask_app.services import concurrency
-
-try:
-    import pymupdf
-except ImportError:
-    pymupdf = None
+from pdf_worker import (
+    FAST_WORDS_AVAILABLE,
+    PDF_TABLE_SETTINGS,
+    TEXT_HEADER,
+    _extract_chunk_task,
+    _extract_text_chunk_task,
+    _extract_text_page,
+    _init_pdf_worker,
+    _init_text_worker,
+    _iter_pages,
+    _open_text_document,
+    _page_tables,
+    _page_words,
+)
 
 try:
     import psutil
 except ImportError:
     psutil = None
-
-
-_FAST_WORDS_ENABLED = os.environ.get("KONVERTER_PDF_WORDS", "1") not in ("0", "false", "False")
-FAST_WORDS_AVAILABLE = pymupdf is not None and _FAST_WORDS_ENABLED
 
 
 def _get_memory_usage_mb():
@@ -124,7 +130,6 @@ PARALLEL_DEGRADE_SECONDS = 90
 PARALLEL_MEMORY_GB_PER_WORKER = float(os.environ.get("KONVERTER_MEM_GB_PER_WORKER", "0.15"))
 PARALLEL_MEMORY_RESERVE_GB = float(os.environ.get("KONVERTER_MEM_RESERVE_GB", "0.4"))
 PARALLEL_MEMORY_FLOOR_GB = float(os.environ.get("KONVERTER_MEM_FLOOR_GB", "0.35"))
-POLITE_MODE = os.environ.get("KONVERTER_POLITE", "1") not in ("0", "false", "False")
 
 PROGRESS_PAGE_STEP = int(os.environ.get("KONVERTER_PROGRESS_PAGE_STEP", "5"))
 
@@ -134,28 +139,6 @@ PARALLEL_MAX_WORKERS = (
     if _workers_override > 0
     else min(_physical_cores(), PARALLEL_MAX_WORKERS_CAP)
 )
-
-_BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
-
-PDF_TABLE_SETTINGS = {
-    "vertical_strategy": "lines",
-    "horizontal_strategy": "lines",
-    "snap_tolerance": 5,
-    "join_tolerance": 5,
-    "edge_min_length": 5,
-}
-
-TEXT_DATE_X_MAX = 50
-TEXT_DESC_X_MIN = 90
-TEXT_DESC_X_MAX = 270
-TEXT_DEBET_X = (270, 340)
-TEXT_KREDIT_X = (340, 420)
-TEXT_SALDO_X = (420, 510)
-TEXT_REF_X = (510, 590)
-TEXT_HEADER = ["Tanggal", "Keterangan", "Debet", "Kredit", "Saldo", "No. Referensi"]
-TEXT_ROW_Y_TOLERANCE = 3
-
-_WORKER_PDF = None
 
 
 def convert_csv_to_excel(input_path, output_path, progress=None):
@@ -194,11 +177,13 @@ def _write_excel(dataframe, output_path, sheet_name="Sheet1", include_header=Tru
     workbook.save(output_path)
 
 
-def convert_pdf_to_excel(input_path, output_path, progress=None, total_pages=None):
+def convert_pdf_to_excel(input_path, output_path, progress=None, total_pages=None, strategy=None):
     memory_start_mb = _get_memory_usage_mb()
     system_memory_start_percent = _get_system_memory_percent()
 
-    strategy = _detect_pdf_strategy(input_path)
+    if strategy is None:
+        strategy = _detect_pdf_strategy(input_path)
+
     _log_milestone("reading", input_path=input_path, total_pages=total_pages, memory_mb=memory_start_mb, system_memory_percent=system_memory_start_percent, strategy=strategy)
 
     if total_pages is None:
@@ -243,7 +228,7 @@ def _collect_pdf_tables(input_path, progress, total_pages, on_tables):
 
     _report_progress(progress, 8, f"Halaman 0 dari halaman {total_pages}")
 
-    if not should_use_pool:
+    if not use_pool:
         _read_pages_sequential(input_path, total_pages, progress, on_tables)
         return
 
@@ -259,13 +244,6 @@ def _count_pages(input_path):
         document.close()
 
 
-def _open_text_document(input_path):
-    if FAST_WORDS_AVAILABLE:
-        return pymupdf.open(str(input_path))
-
-    return pdfplumber.open(str(input_path))
-
-
 def _document_page_count(document):
     page_count = getattr(document, "page_count", None)
 
@@ -278,25 +256,6 @@ def _document_page_count(document):
         return len(page_list)
 
     return len(document)
-
-
-def _iter_pages(document, start=0):
-    page_list = getattr(document, "pages", None)
-
-    if isinstance(page_list, list):
-        return page_list[start:]
-
-    return (document[index] for index in range(start, len(document)))
-
-
-def _page_words(page):
-    if hasattr(page, "extract_words"):
-        return page.extract_words()
-
-    return [
-        {"text": word[4], "x0": word[0], "top": word[1]}
-        for word in page.get_text("words")
-    ]
 
 
 def _worker_count(total_pages, minimum=PARALLEL_MIN_PAGES):
@@ -477,140 +436,27 @@ def _abort_executor(process_executor, pending_futures):
         pass
 
 
-def _init_pdf_worker(pdf_path):
-    _apply_polite_priority()
-    global _WORKER_PDF
-    _WORKER_PDF = pdfplumber.open(pdf_path)
-
-
-def _apply_polite_priority():
-    if not POLITE_MODE:
-        return
-
-    try:
-        if os.name == "nt":
-            import ctypes
-
-            process_handle = ctypes.windll.kernel32.GetCurrentProcess()
-            ctypes.windll.kernel32.SetPriorityClass(process_handle, _BELOW_NORMAL_PRIORITY_CLASS)
-        else:
-            os.nice(5)
-    except Exception:
-        pass
-
-
-def _extract_chunk_task(chunk):
-    start, end = chunk
-    return start, _extract_chunk(_WORKER_PDF, start, end)
-
-
 def _detect_pdf_strategy(input_path):
     try:
         with pdfplumber.open(input_path) as pdf:
-            if not pdf.pages:
-                return "lines"
-            preview_tables = pdf.pages[0].extract_tables(PDF_TABLE_SETTINGS)
+            return _strategy_from_document(pdf)
     except Exception:
         return "lines"
 
+
+def _strategy_from_document(pdf):
+    if not pdf.pages:
+        return "lines"
+
+    preview_tables = pdf.pages[0].extract_tables(PDF_TABLE_SETTINGS)
     data_rows = 0
+
     if preview_tables:
         for table in preview_tables:
             if table:
                 data_rows += max(len(table) - 1, 0)
 
     return "lines" if data_rows >= 1 else "text"
-
-
-def _extract_text_page(page):
-    words = _page_words(page)
-    words.sort(key=lambda w: (w["top"], w["x0"]))
-
-    word_clusters = []
-    for word in words:
-        if word_clusters and abs(word_clusters[-1]["y"] - word["top"]) <= TEXT_ROW_Y_TOLERANCE:
-            word_clusters[-1]["words"].append(word)
-        else:
-            word_clusters.append({"y": word["top"], "words": [word]})
-
-    date_pattern = re.compile(r"^\d{2}-\d{2}-\d{4}$")
-    rows = []
-    current = None
-
-    def _amount_in(tokens, bounds):
-        low, high = bounds
-        return " ".join(word["text"] for word in tokens if low <= word["x0"] < high)
-
-    for cluster in word_clusters:
-        tokens = sorted(cluster["words"], key=lambda word: word["x0"])
-        if not tokens:
-            continue
-
-        first_token = tokens[0]
-        if date_pattern.match(first_token["text"]) and first_token["x0"] < TEXT_DATE_X_MAX:
-            if current is not None:
-                rows.append(_finalize_text_transaction(current))
-            current = {
-                "date": first_token["text"],
-                "debet": _amount_in(tokens, TEXT_DEBET_X),
-                "kredit": _amount_in(tokens, TEXT_KREDIT_X),
-                "saldo": _amount_in(tokens, TEXT_SALDO_X),
-                "ref": _amount_in(tokens, TEXT_REF_X),
-                "desc": [],
-            }
-            continue
-
-        if current is None:
-            continue
-
-        line_text = " ".join(word["text"] for word in tokens)
-        if re.match(r"Page:", line_text):
-            continue
-
-        description_words = [word["text"] for word in tokens if TEXT_DESC_X_MIN <= word["x0"] < TEXT_DESC_X_MAX]
-        if description_words:
-            current["desc"].append(" ".join(description_words))
-
-    if current is not None:
-        rows.append(_finalize_text_transaction(current))
-
-    return rows
-
-
-def _finalize_text_transaction(transaction):
-    description = "\n".join(transaction["desc"]) if transaction["desc"] else ""
-    return [
-        transaction["date"],
-        description,
-        transaction["debet"],
-        transaction["kredit"],
-        transaction["saldo"],
-        transaction["ref"],
-    ]
-
-
-def _extract_text_chunk_task(chunk):
-    start, end = chunk
-    rows = []
-
-    for page in _iter_text_pages(_WORKER_PDF, start, end):
-        rows.extend(_extract_text_page(page))
-    return start, rows
-
-
-def _iter_text_pages(document, start, end):
-    page_list = getattr(document, "pages", None)
-
-    if isinstance(page_list, list):
-        return page_list[start:end]
-
-    return (document[index] for index in range(start, min(end, len(document))))
-
-
-def _init_text_worker(pdf_path):
-    _apply_polite_priority()
-    global _WORKER_PDF
-    _WORKER_PDF = _open_text_document(pdf_path)
 
 
 def _read_text_pages_sequential(input_path, total_pages, progress, on_rows, start=0):
@@ -708,35 +554,11 @@ def _collect_text_rows(input_path, progress, total_pages, on_rows):
 
     _report_progress(progress, 8, f"Halaman 0 dari halaman {total_pages}")
 
-    if not should_use_pool:
+    if not use_pool:
         _read_text_pages_sequential(input_path, total_pages, progress, on_rows)
         return
 
     _read_text_chunks_parallel(input_path, _build_chunks(total_pages), worker_count, total_pages, progress, on_rows)
-
-
-def _page_tables(page):
-    tables = []
-
-    try:
-        for table in page.extract_tables(PDF_TABLE_SETTINGS):
-            cleaned_table = _clean_table(table)
-
-            if cleaned_table:
-                tables.append(cleaned_table)
-    finally:
-        page.flush_cache()
-
-    return tables
-
-
-def _extract_chunk(pdf, start, end):
-    tables = []
-
-    for page in pdf.pages[start:end]:
-        tables.extend(_page_tables(page))
-
-    return tables
 
 
 def _percent_from_pages(pages_read_count, total_pages):
@@ -805,11 +627,20 @@ PREVIEW_TIMED_PAGES = 5
 
 
 def preview_pdf_file(path):
-    strategy = _detect_pdf_strategy(path)
-    lines_mode = strategy == "lines"
-    document = pdfplumber.open(path) if lines_mode else _open_text_document(path)
+    detection_document = pdfplumber.open(path)
+    document = detection_document
 
     try:
+        try:
+            strategy = _strategy_from_document(detection_document)
+        except Exception:
+            strategy = "lines"
+
+        lines_mode = strategy == "lines"
+
+        if not lines_mode:
+            document = _open_text_document(path)
+
         page_count = _document_page_count(document)
 
         if page_count == 0:
@@ -852,12 +683,15 @@ def preview_pdf_file(path):
             timed_pages = 0
             per_page_seconds = 0.0
     finally:
-        document.close()
+        if document is not detection_document:
+            document.close()
+        detection_document.close()
 
     return {
         "page_count": page_count,
         "sample_rows": sample_rows,
         "estimated_seconds": int(round(per_page_seconds * page_count)) if timed_pages else 0,
+        "strategy": strategy,
     }
 
 
@@ -885,18 +719,46 @@ def _json_value(value):
 
 
 def _read_csv(input_path):
-    table = _read_transaction_csv(input_path)
-    if table is not None:
-        return table
+    lines = _read_text_lines(input_path)
+    header_index, delimiter, columns, expected = _find_table_header(lines)
 
-    return _read_generic_csv(input_path)
+    if header_index is not None and not (
+        header_index == 0 and _is_uniform_table(lines, delimiter, expected)
+    ):
+        return _build_aligned_table(lines, header_index, delimiter, columns)
+
+    try:
+        return _read_generic_csv(input_path, delimiter)
+    except Exception:
+        if header_index is None:
+            raise
+
+        return _build_aligned_table(lines, header_index, delimiter, columns)
 
 
-def _read_generic_csv(input_path):
+def _build_aligned_table(lines, header_index, delimiter, columns):
+    rows = []
+    column_count = len(columns)
+
+    for line in lines[header_index + 1:]:
+        if not line.strip():
+            continue
+
+        row = _split_csv_line(line, delimiter)
+        row = _fit_csv_row(row, column_count)
+
+        if any(cell.strip() for cell in row):
+            rows.append(row)
+
+    return pandas.DataFrame(rows, columns=columns)
+
+
+def _read_generic_csv(input_path, delimiter=None):
     if not _has_content(input_path):
         return pandas.DataFrame()
 
-    delimiter = _sniff_delimiter(input_path)
+    if delimiter is None:
+        delimiter = _sniff_delimiter(input_path)
 
     if delimiter is not None:
         try:
@@ -992,33 +854,6 @@ def _count_unquoted(line, character):
     return count
 
 
-def _read_transaction_csv(input_path):
-    lines = _read_text_lines(input_path)
-
-    if not lines:
-        return None
-
-    header_index, delimiter, columns = _find_transaction_header(lines)
-
-    if header_index is None:
-        return None
-
-    rows = []
-    column_count = len(columns)
-
-    for line in lines[header_index + 1:]:
-        if not line.strip():
-            continue
-
-        row = next(csv.reader([line], delimiter=delimiter))
-        row = _fit_csv_row(row, column_count)
-
-        if any(cell.strip() for cell in row):
-            rows.append(row)
-
-    return pandas.DataFrame(rows, columns=columns)
-
-
 def _read_text_lines(input_path):
     for encoding in ("utf-8-sig", "latin-1"):
         try:
@@ -1030,16 +865,74 @@ def _read_text_lines(input_path):
     return []
 
 
-def _find_transaction_header(lines):
-    for index, line in enumerate(lines):
-        for delimiter in (",", ";"):
-            columns = next(csv.reader([line], delimiter=delimiter))
-            normalized_columns = _normalize_row(columns)
+def _find_table_header(lines):
+    window = [
+        (index, line)
+        for index, line in enumerate(lines[:CSV_HEADER_SCAN_LINES])
+        if line.strip()
+    ]
 
-            if "tanggal" in normalized_columns and "keterangan" in normalized_columns:
-                return index, delimiter, columns
+    if not window:
+        return None, None, None, None
 
-    return None, None, None
+    best = None
+
+    for delimiter in CSV_DELIMITERS:
+        parsed = [_split_csv_line(line, delimiter) for _, line in window]
+        counts = [len(cells) for cells in parsed]
+        expected, occurrences = Counter(counts).most_common(1)[0]
+
+        if expected < 2:
+            continue
+
+        score = (occurrences, expected)
+
+        if best is None or score > best[0]:
+            best = (score, delimiter, parsed, expected)
+
+    if best is None:
+        return None, None, None, None
+
+    _, delimiter, parsed, expected = best
+
+    for index, cells in enumerate(parsed):
+        if len(cells) == expected and _looks_like_header(cells):
+            return window[index][0], delimiter, cells, expected
+
+    for index, cells in enumerate(parsed):
+        if _looks_like_header(cells):
+            return window[index][0], delimiter, cells, expected
+
+    for index, cells in enumerate(parsed):
+        if len(cells) == expected:
+            return window[index][0], delimiter, cells, expected
+
+    return None, None, None, None
+
+
+def _looks_like_header(cells):
+    if len(cells) < 2 or not all(cell.strip() for cell in cells):
+        return False
+
+    return not any(_HEADER_DIGIT.search(cell) for cell in cells)
+
+
+def _is_uniform_table(lines, delimiter, expected):
+    for line in lines[:CSV_HEADER_SCAN_LINES]:
+        if not line.strip():
+            continue
+
+        if len(_split_csv_line(line, delimiter)) != expected:
+            return False
+
+    return True
+
+
+def _split_csv_line(line, delimiter):
+    try:
+        return next(csv.reader([line], delimiter=delimiter))
+    except (csv.Error, StopIteration):
+        return [line]
 
 
 def _fit_csv_row(row, column_count):
@@ -1054,20 +947,6 @@ def _fit_csv_row(row, column_count):
         return [row[0], description, *row[-fixed_tail_count:]]
 
     return row + [""] * (column_count - len(row))
-
-
-def _clean_table(table):
-    cleaned_rows = []
-
-    for row in table:
-        if row is None:
-            continue
-
-        cleaned_row = [(cell or "").strip() for cell in row]
-        if any(cleaned_row):
-            cleaned_rows.append(cleaned_row)
-
-    return cleaned_rows
 
 
 class _RowBuilder:
@@ -1129,22 +1008,25 @@ _IDENTIFIER_PLAIN = re.compile(r"0\d+")
 _IDENTIFIER_GROUPED = re.compile(r"0\d{1,2}(?:,\d{3})+")
 _SIMPLE_INTEGER = re.compile(r"[+-]?\d+")
 _TOKEN_SEPARATOR = re.compile(r"[\n\r\t ]")
+_HEADER_DIGIT = re.compile(r"\d")
+CSV_DELIMITERS = (",", ";", "\t", "|")
+CSV_HEADER_SCAN_LINES = int(os.environ.get("KONVERTER_HEADER_SCAN_LINES", "200"))
 
 
 def _normalize_nominal_values(dataframe):
     for column in dataframe.columns:
         column_series = dataframe[column]
+        cleaned_series = _clean_series_token(column_series)
 
-        if _has_identifier_value(column_series):
+        if _has_identifier_value(cleaned_series):
             continue
 
-        dataframe[column] = _normalize_nominal_column(column_series)
+        dataframe[column] = _normalize_nominal_column(column_series, cleaned_series)
 
     return dataframe
 
 
-def _has_identifier_value(column_series):
-    cleaned_series = _clean_series_token(column_series)
+def _has_identifier_value(cleaned_series):
     return bool(
         cleaned_series.str.fullmatch(_IDENTIFIER_PLAIN.pattern, na=False).any()
         or cleaned_series.str.fullmatch(_IDENTIFIER_GROUPED.pattern, na=False).any()
@@ -1152,24 +1034,30 @@ def _has_identifier_value(column_series):
 
 
 def _clean_series_token(column_series):
-    cleaned_series = column_series.map(lambda value: "" if value is None else str(value))
-    cleaned_series = cleaned_series.str.strip().str.replace(_TOKEN_SEPARATOR.pattern, "", regex=True).str.rstrip("CDcd")
-    return cleaned_series.mask(cleaned_series.isin(["-", "--", ".", ","]), "")
+    return column_series.map(_clean_number_token)
 
 
-def _normalize_nominal_column(column_series):
+def _normalize_nominal_column(column_series, cleaned_series=None):
+    if cleaned_series is None:
+        cleaned_series = _clean_series_token(column_series)
+
     values = column_series.tolist()
-    cleaned_series = _clean_series_token(column_series).tolist()
+    tokens = cleaned_series.tolist()
     result = []
 
     for index, value in enumerate(values):
-        token = cleaned_series[index]
+        token = tokens[index]
 
         if _SIMPLE_INTEGER.fullmatch(token):
             number = _to_simple_integer(token)
             result.append(value if number is None else number)
+        elif value is None:
+            result.append(None)
+        elif not token:
+            result.append(value)
         else:
-            result.append(_normalize_cell(value))
+            number = _to_number_from_token(token)
+            result.append(value if number is None else number)
 
     return result
 
@@ -1190,7 +1078,7 @@ def _normalize_cell(value):
     if not token:
         return value
 
-    number = _to_number(token)
+    number = _to_number_from_token(token)
     return value if number is None else number
 
 
@@ -1207,8 +1095,10 @@ def _clean_number_token(value):
 
 
 def _to_number(value):
-    token = _clean_number_token(value)
+    return _to_number_from_token(_clean_number_token(value))
 
+
+def _to_number_from_token(token):
     if not token:
         return None
 
