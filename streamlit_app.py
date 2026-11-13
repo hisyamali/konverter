@@ -2,25 +2,16 @@ import html
 import os
 import re
 import tempfile
+import threading
 import time
 from pathlib import Path
 from uuid import uuid4
 
-os.environ.setdefault("KONVERTER_MAX_WORKERS", "1" if os.name == "nt" else "2")
+os.environ.setdefault("KONVERTER_MAX_WORKERS", "4" if os.name == "nt" else "2")
 os.environ.setdefault("KONVERTER_MAX_UPLOAD_MB", "50")
 
 import streamlit
 import streamlit.components.v1 as components
-
-from flask_app.services import store
-from flask_app.services.concurrency import QueueTimeout, conversion_slot
-from flask_app.services.converter import (
-    convert_csv_to_excel,
-    convert_pdf_to_excel,
-    preview_csv_file,
-    preview_pdf_file,
-)
-from flask_app.services.eta import ProgressReporter, format_interval
 
 EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSS_PATH = Path(__file__).parent / "flask_app" / "static" / "css" / "streamlit.css"
@@ -31,32 +22,43 @@ THEME_SCRIPT_PATH = Path(__file__).parent / "flask_app" / "static" / "js" / "the
 GUEST_MAX_MB = int(os.environ.get("KONVERTER_GUEST_MAX_UPLOAD_MB", "10") or "10")
 USER_MAX_MB = int(os.environ.get("KONVERTER_USER_MAX_UPLOAD_MB", "50") or "50")
 
-streamlit.set_page_config(
-    page_title="Konverter PDF/CSV ke Excel",
-    layout="centered",
-    initial_sidebar_state="collapsed",
-)
+if __name__ == "__main__":
+    from flask_app.services import store
+    from flask_app.services.concurrency import QueueTimeout, conversion_slot
+    from flask_app.services.converter import (
+        convert_csv_to_excel,
+        convert_pdf_to_excel,
+        preview_csv_file,
+        preview_pdf_file,
+    )
+    from flask_app.services.eta import ProgressReporter, format_interval
 
-if TAILWIND_CSS_PATH.exists():
-    streamlit.markdown(
-        f"<style>{TAILWIND_CSS_PATH.read_text(encoding='utf-8')}</style>",
-        unsafe_allow_html=True,
+    streamlit.set_page_config(
+        page_title="Konverter PDF/CSV ke Excel",
+        layout="centered",
+        initial_sidebar_state="collapsed",
     )
 
-if THEME_CSS_PATH.exists():
-    streamlit.markdown(
-        f"<style>{THEME_CSS_PATH.read_text(encoding='utf-8')}</style>",
-        unsafe_allow_html=True,
-    )
+    if TAILWIND_CSS_PATH.exists():
+        streamlit.markdown(
+            f"<style>{TAILWIND_CSS_PATH.read_text(encoding='utf-8')}</style>",
+            unsafe_allow_html=True,
+        )
 
-if CSS_PATH.exists():
-    streamlit.markdown(f"<style>{CSS_PATH.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+    if THEME_CSS_PATH.exists():
+        streamlit.markdown(
+            f"<style>{THEME_CSS_PATH.read_text(encoding='utf-8')}</style>",
+            unsafe_allow_html=True,
+        )
 
-if THEME_SCRIPT_PATH.exists():
-    components.html(
-        f"<script>{THEME_SCRIPT_PATH.read_text(encoding='utf-8')}</script>",
-        height=0,
-    )
+    if CSS_PATH.exists():
+        streamlit.markdown(f"<style>{CSS_PATH.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+
+    if THEME_SCRIPT_PATH.exists():
+        components.html(
+            f"<script>{THEME_SCRIPT_PATH.read_text(encoding='utf-8')}</script>",
+            height=0,
+        )
 
 
 def _escape_html(value) -> str:
@@ -591,16 +593,50 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
         return
 
     overlay = streamlit.empty()
-    overlay.markdown(_overlay_html(0, "Menyiapkan file", None, 0), unsafe_allow_html=True)
 
-    def on_update(percent, message, eta, elapsed):
-        overlay.markdown(_overlay_html(percent, message, eta, elapsed), unsafe_allow_html=True)
+    state_lock = threading.Lock()
+    state = {
+        "percent": 0,
+        "message": "Menyiapkan file",
+        "eta": None,
+        "eta_at": None,
+        "done": False,
+    }
+    started = time.perf_counter()
 
-    def on_wait(waited, position):
+    def on_update(percent, message, eta, _elapsed):
+        with state_lock:
+            state["percent"] = percent
+            state["message"] = message
+            state["eta"] = eta
+            state["eta_at"] = time.perf_counter() if eta is not None else None
+
+    def on_wait(_waited, position):
+        with state_lock:
+            state["message"] = f"Menunggu antrean (posisi {position})"
+
+    def render():
+        with state_lock:
+            percent = state["percent"]
+            message = state["message"]
+            eta = state["eta"]
+            eta_at = state["eta_at"]
+            done = state["done"]
+
+        now = time.perf_counter()
+        elapsed = now - started
+        display_eta = eta
+
+        if eta is not None and eta_at is not None:
+            display_eta = max(0, eta - (now - eta_at))
+
         overlay.markdown(
-            _overlay_html(0, f"Menunggu antrean (posisi {position})", None, waited),
+            _overlay_html(percent, message, display_eta, elapsed),
             unsafe_allow_html=True,
         )
+        return done
+
+    render()
 
     reporter = ProgressReporter(on_update)
     page_count = preview_data.get("page_count") if kind == "pdf-to-excel" else None
@@ -613,7 +649,8 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
     object_id = uuid4().hex
     job_id = None
     result_name = None
-    started = time.perf_counter()
+    duration_started = time.perf_counter()
+    worker_error = None
 
     if user:
         try:
@@ -630,18 +667,35 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
         except Exception as error:
             streamlit.warning(f"Gagal menyimpan sumber ke riwayat: {error}")
 
+    def conversion_worker():
+        nonlocal worker_error
+        try:
+            with conversion_slot(on_wait=on_wait):
+                if kind == "csv-to-excel":
+                    convert_csv_to_excel(input_path, output_path, reporter)
+                else:
+                    convert_pdf_to_excel(
+                        input_path,
+                        output_path,
+                        reporter,
+                        total_pages=page_count,
+                        strategy=preview_data.get("strategy"),
+                    )
+        except BaseException as error:
+            worker_error = error
+        finally:
+            with state_lock:
+                state["done"] = True
+
+    worker = threading.Thread(target=conversion_worker, name="konverter-conversion", daemon=True)
+    worker.start()
+
     try:
-        with conversion_slot(on_wait=on_wait):
-            if kind == "csv-to-excel":
-                convert_csv_to_excel(input_path, output_path, reporter)
-            else:
-                convert_pdf_to_excel(
-                    input_path,
-                    output_path,
-                    reporter,
-                    total_pages=page_count,
-                    strategy=preview_data.get("strategy"),
-                )
+        while not render():
+            time.sleep(0.4)
+
+        if worker_error is not None:
+            raise worker_error
 
         result_bytes = Path(output_path).read_bytes()
         streamlit.session_state["output_bytes"] = result_bytes
@@ -663,7 +717,7 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
                     output_size_bytes=len(result_bytes),
                     page_count=page_count,
                     row_count=preview_data.get("row_count") if kind == "csv-to-excel" else None,
-                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    duration_ms=int((time.perf_counter() - duration_started) * 1000),
                 )
             except Exception as error:
                 streamlit.warning(f"Hasil tidak tersimpan ke riwayat: {error}")
@@ -677,6 +731,7 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
         store.finish_job(job_id, "failed", error=str(error))
         streamlit.error(f"Konversi gagal: {error}")
     finally:
+        worker.join(timeout=5)
         overlay.empty()
         streamlit.session_state["converting"] = False
         try:
@@ -878,25 +933,26 @@ def _render_download(job: dict) -> None:
     )
 
 
-user = _boot_user()
+if __name__ == "__main__":
+    user = _boot_user()
 
-if user is None and streamlit.session_state.get("konverter_page") == "history":
-    streamlit.session_state["konverter_page"] = "auth"
+    if user is None and streamlit.session_state.get("konverter_page") == "history":
+        streamlit.session_state["konverter_page"] = "auth"
 
-page = streamlit.session_state.setdefault("konverter_page", "home")
-limit_mb = USER_MAX_MB if user else GUEST_MAX_MB
+    page = streamlit.session_state.setdefault("konverter_page", "home")
+    limit_mb = USER_MAX_MB if user else GUEST_MAX_MB
 
-if page in ("pdf", "csv"):
-    _page_tool("pdf-to-excel" if page == "pdf" else "csv-to-excel", user, limit_mb)
-elif page == "history":
-    _page_history(user)
-elif page == "auth":
-    if not store.is_configured():
-        streamlit.info(
-            "Login belum dikonfigurasi. Isi blok `[supabase]` atau `[appwrite]` di "
-            "`.streamlit/secrets.toml` untuk mengaktifkannya."
-        )
+    if page in ("pdf", "csv"):
+        _page_tool("pdf-to-excel" if page == "pdf" else "csv-to-excel", user, limit_mb)
+    elif page == "history":
+        _page_history(user)
+    elif page == "auth":
+        if not store.is_configured():
+            streamlit.info(
+                "Login belum dikonfigurasi. Isi blok `[supabase]` atau `[appwrite]` di "
+                "`.streamlit/secrets.toml` untuk mengaktifkannya."
+            )
+        else:
+            _page_auth()
     else:
-        _page_auth()
-else:
-    _page_home(user, limit_mb)
+        _page_home(user, limit_mb)

@@ -128,7 +128,7 @@ Batas ukuran dicek di aplikasi **sebelum** konversi; batas keras server tetap `m
 5. Pilih subdomain (mis. `all-convert.streamlit.app`) → **Deploy**.
 
 Catatan batas Community Cloud:
-- CPU maks 2 core, RAM maks ~2.7 GB → app memakai `KONVERTER_MAX_WORKERS=2` di Linux/Cloud (otomatis `1` di Windows lokal agar stabil).
+- CPU maks 2 core, RAM maks ~2.7 GB → app memakai `KONVERTER_MAX_WORKERS=2` di Linux/Cloud. Di Windows lokal (menjalankan Streamlit sendiri) default-nya `4` agar konversi PDF besar lebih cepat; jumlah worker sebenarnya tetap dibatasi core logis dan RAM kosong, jadi mesin kecil otomatis turun ke sekuensial.
 - Batas unggah **50 MB** (`maxUploadSize` di `.streamlit/config.toml`); tamu dibatasi 10 MB di aplikasi.
 - App **tidur setelah 12 jam** tanpa trafik dan **tidak mendukung custom domain**.
 - Overlay progress bergantung pada CSS Streamlit (`data-testid`); versi Streamlit dipin `1.66.1` agar tampilan stabil.
@@ -343,6 +343,7 @@ Otomatis memakai `.devcontainer/devcontainer.json`. Setelah codespace terbuka, j
 | `KONVERTER_CHUNK_PAGES` | `10` | Halaman per tugas worker. Lebih kecil = progress & ETA lebih halus dan beban memori buffer lebih rendah; terukur tidak memperlambat jalur teks (10 dan 5 halaman sama cepat atau lebih cepat dari 20) |
 | `KONVERTER_TASKS_PER_CHILD` | `32` | Jumlah tugas sebelum worker proses di-recycle (menjaga memori worker tetap datar) |
 | `KONVERTER_PROGRESS_PAGE_STEP` | `5` | Langkah halaman minimal sebelum pesan progress "Halaman X dari Y" dikirim ke UI (dipakai untuk progress & ETA). Kecilkan untuk update lebih rapat, besarkan untuk lebih hemat |
+| `KONVERTER_WRITE_PROGRESS_ROWS` | *(otomatis)* | Jumlah baris per laporan progress saat menulis `.xlsx`. Bila kosong/`0`, laporan dikirim tiap `max(1, total_baris/200)` baris. Kecilkan untuk progress lebih halus |
 | `KONVERTER_MEM_GB_PER_WORKER` | `0.15` | Perkiraan RAM per worker (GB) untuk memilih jumlah worker |
 | `KONVERTER_MEM_RESERVE_GB` | `0.4` | RAM yang selalu disisakan (GB) untuk aplikasi lain |
 | `KONVERTER_MEM_FLOOR_GB` | `0.35` | Ambang RAM kosong (GB): bila turun di bawah ini, konversi beralih ke mode hemat (sekuensial) |
@@ -454,7 +455,7 @@ Status pekerjaan konversi.
 
 - Ekstraksi tabel bergaris memakai `pdfplumber` dengan `PDF_TABLE_SETTINGS` (strategi *lines*) untuk hasil yang konsisten pada laporan mutasi bank. (`find_tables` PyMuPDF diukur **lebih lambat** 2–3× dan menambah baris kosong, jadi tidak dipakai untuk tabel.)
 - **Format teks (tanpa garis)**: untuk PDF mutasi bank yang datanya berupa teks pada kolom tetap (mis. Bank Sumselbabel/BRI), aplikasi otomatis mendeteksi dan memakai parser berbasis posisi kolom (Tanggal, Keterangan, Debet, Kredit, Saldo, No. Referensi) — deteksi dilakukan dari halaman pertama, tanpa perubahan manual. Parser ini membaca kata via **PyMuPDF (`get_text("words")`)** bila tersedia: ±3–5 ms/halaman (**±20×** lebih cepat dari `pdfplumber`), output baris identik (diuji 720/720). Nonaktifkan dengan `KONVERTER_PDF_WORDS=0`.
-- Halaman dibaca per chunk oleh beberapa worker (`PARALLEL_CHUNK_PAGES=20`); jumlah worker dinamis = min(core fisik, `KONVERTER_MAX_WORKERS`, RAM kosong). Default `KONVERTER_MAX_WORKERS` = core fisik (6 di mesin uji). Jalur teks memakai ambang terpisah `KONVERTER_TEXT_MIN_PARALLEL_PAGES` (default 400).
+- Halaman dibaca per chunk oleh beberapa worker (`KONVERTER_CHUNK_PAGES`, default `10`); jumlah worker dinamis = min(core logis, `KONVERTER_MAX_WORKERS`, RAM kosong). Default `KONVERTER_MAX_WORKERS` = core fisik (6 di mesin uji). Jalur teks memakai ambang terpisah `KONVERTER_TEXT_MIN_PARALLEL_PAGES` (default `1000`).
 - **Hemat memori**: hasil tiap chunk dialirkan (streaming) sesuai urutan halaman langsung ke baris data, tanpa menahan semua tabel mentah; penggabungan baris dilakukan in-place (`extend`) dan worker membersihkan cache `pdfplumber` tiap halaman (`flush_cache`) sehingga memori worker tetap datar (±0,2 GB) walau file ribuan halaman. Puncak memori proses utama turun drastis (contoh 119 halaman: ~1,1 GB → ~0,1 GB).
 - Bila tidak ada kemajuan selama `PARALLEL_DEGRADE_SECONDS=90` detik, proses beralih ke pembacaan sekuensial untuk sisa halaman (menjamin selesai meski mesin sibuk).
 - Perkiraan waktu konversi dikalibrasi dengan mengukur kecepatan ekstraksi blok halaman sekuensial pada pratinjau.

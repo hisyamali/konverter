@@ -132,6 +132,7 @@ PARALLEL_MEMORY_RESERVE_GB = float(os.environ.get("KONVERTER_MEM_RESERVE_GB", "0
 PARALLEL_MEMORY_FLOOR_GB = float(os.environ.get("KONVERTER_MEM_FLOOR_GB", "0.35"))
 
 PROGRESS_PAGE_STEP = int(os.environ.get("KONVERTER_PROGRESS_PAGE_STEP", "5"))
+WRITE_PROGRESS_ROW_STEP = int(os.environ.get("KONVERTER_WRITE_PROGRESS_ROWS", "0") or "0")
 
 _workers_override = int(os.environ.get("KONVERTER_MAX_WORKERS", "0") or "0")
 PARALLEL_MAX_WORKERS = (
@@ -153,28 +154,44 @@ def convert_csv_to_excel(input_path, output_path, progress=None):
     _log_milestone("normalize", rows=len(dataframe), columns=list(dataframe.columns))
     _report_progress(progress, 70, "Menyusun kolom data")
 
-    _normalize_nominal_values(dataframe)
+    _normalize_nominal_values(dataframe, progress, (70, 84))
 
     _log_milestone("write", rows=len(dataframe))
-    _report_progress(progress, 88, "Menulis file Excel")
-    _write_excel(dataframe, output_path)
+    _report_progress(progress, 86, "Menulis file Excel")
+    _write_excel(dataframe, output_path, progress=progress, percent_range=(86, 99))
 
     memory_end_mb = _get_memory_usage_mb()
     _log_milestone("done", output_path=output_path, memory_mb=memory_end_mb, memory_delta_mb=round(memory_end_mb - memory_start_mb, 1) if memory_start_mb and memory_end_mb else None)
     _report_progress(progress, 100, "Selesai")
 
 
-def _write_excel(dataframe, output_path, sheet_name="Sheet1", include_header=True):
+def _write_excel(dataframe, output_path, sheet_name="Sheet1", include_header=True, progress=None, percent_range=None):
     workbook = Workbook(write_only=True)
     sheet = workbook.create_sheet(sheet_name)
 
     if include_header:
         sheet.append(list(dataframe.columns))
 
-    for row in dataframe.itertuples(index=False, name=None):
+    total_rows = len(dataframe)
+    reporting = progress is not None and percent_range is not None and total_rows > 0
+    start_percent = end_percent = 0
+    step = 0
+
+    if reporting:
+        start_percent, end_percent = percent_range
+        step = WRITE_PROGRESS_ROW_STEP or max(1, total_rows // 200)
+
+    for index, row in enumerate(dataframe.itertuples(index=False, name=None), start=1):
         sheet.append(row)
 
+        if reporting and index % step == 0:
+            percent = start_percent + int(round((end_percent - start_percent) * index / total_rows))
+            _report_progress(progress, percent, "Menulis file Excel")
+
     workbook.save(output_path)
+
+    if reporting:
+        _report_progress(progress, end_percent, "Menulis file Excel")
 
 
 def convert_pdf_to_excel(input_path, output_path, progress=None, total_pages=None, strategy=None):
@@ -208,11 +225,11 @@ def convert_pdf_to_excel(input_path, output_path, progress=None, total_pages=Non
 
     _normalize_table(rows)
     dataframe = pandas.DataFrame(rows)
-    _normalize_nominal_values(dataframe)
+    _normalize_nominal_values(dataframe, progress, (86, 92))
 
     _log_milestone("write", rows=len(dataframe), columns=list(dataframe.columns))
     _report_progress(progress, 93, "Menulis file Excel")
-    _write_excel(dataframe, output_path, sheet_name="Data", include_header=False)
+    _write_excel(dataframe, output_path, sheet_name="Data", include_header=False, progress=progress, percent_range=(93, 99))
 
     memory_end_mb = _get_memory_usage_mb()
     system_memory_end_percent = _get_system_memory_percent()
@@ -1013,15 +1030,25 @@ CSV_DELIMITERS = (",", ";", "\t", "|")
 CSV_HEADER_SCAN_LINES = int(os.environ.get("KONVERTER_HEADER_SCAN_LINES", "200"))
 
 
-def _normalize_nominal_values(dataframe):
-    for column in dataframe.columns:
+def _normalize_nominal_values(dataframe, progress=None, percent_range=None):
+    columns = list(dataframe.columns)
+    total = len(columns)
+    reporting = progress is not None and percent_range is not None and total > 0
+    start_percent = end_percent = 0
+
+    if reporting:
+        start_percent, end_percent = percent_range
+
+    for position, column in enumerate(columns, start=1):
         column_series = dataframe[column]
         cleaned_series = _clean_series_token(column_series)
 
-        if _has_identifier_value(cleaned_series):
-            continue
+        if not _has_identifier_value(cleaned_series):
+            dataframe[column] = _normalize_nominal_column(column_series, cleaned_series)
 
-        dataframe[column] = _normalize_nominal_column(column_series, cleaned_series)
+        if reporting:
+            percent = start_percent + int(round((end_percent - start_percent) * position / total))
+            _report_progress(progress, percent, "Menyusun kolom data")
 
     return dataframe
 
