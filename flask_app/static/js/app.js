@@ -215,7 +215,22 @@ function setStatus(percent, message, estimatedSecondsValue, elapsedSeconds) {
     }
 
     if (estimatedSeconds !== null && estimatedSeconds >= 0) {
-        estimatedTimeAnchor = { seconds: estimatedSeconds, at: now };
+        let targetSeconds = estimatedSeconds;
+
+        if (estimatedTimeAnchor !== null) {
+            const projected = Math.max(
+                estimatedTimeAnchor.seconds - (now - estimatedTimeAnchor.at) / 1000,
+                0
+            );
+            targetSeconds = Math.min(projected, estimatedSeconds);
+        }
+
+        estimatedTimeAnchor = { seconds: targetSeconds, at: now };
+        paintCountdown(now);
+        estimatedTimeLabel.hidden = false;
+    } else if (estimatedTimeAnchor !== null) {
+        // Server belum punya estimasi baru (mis. ganti fase): biarkan hitungan
+        // mundur yang sudah berjalan terus turun, jangan disembunyikan.
         paintCountdown(now);
         estimatedTimeLabel.hidden = false;
     } else {

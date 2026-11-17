@@ -35,11 +35,13 @@ def _phase_key(message):
     return None
 
 
-def _estimate_eta(percent, elapsed, message, state):
-    if percent <= 0 or percent >= 100:
-        return None
+ETA_MIN_SECONDS = 1.0
+ETA_PHASE_WARMUP_SECONDS = 0.4
+ETA_PHASE_MIN_SPAN = 2
+ETA_DOWN_SMOOTHING = 0.35
 
-    remaining = None
+
+def _raw_remaining(percent, elapsed, message, state):
     page_match = _PAGE_PROGRESS_PATTERN.match(message) if message else None
 
     if page_match:
@@ -47,20 +49,52 @@ def _estimate_eta(percent, elapsed, message, state):
         total_pages = int(page_match.group(2))
 
         if pages_read > 0:
-            remaining = elapsed * (total_pages - pages_read) / pages_read
+            return max(elapsed * (total_pages - pages_read) / pages_read, 0.0)
 
-    if remaining is None:
-        phase_elapsed_seconds = max(elapsed - state["phase_started"], 0.001)
-        percent_span = max(percent - state["phase_percent"], 1)
-        remaining = phase_elapsed_seconds * (100 - percent) / percent_span
+    # Laju per fase hanya bisa dipercaya pada fase tulis (fase terakhir).
+    # Fase normalisasi berjalan jauh lebih cepat daripada fase tulis, sehingga
+    # ekstrapolasinya membuat countdown jatuh ke 1 detik terlalu dini.
+    if state.get("phase") != "write":
+        return None
 
-    previous_eta = state["eta"]
+    phase_elapsed = elapsed - state.get("phase_started", 0.0)
+    phase_span = percent - state.get("phase_percent", percent)
+
+    if phase_elapsed >= ETA_PHASE_WARMUP_SECONDS and phase_span >= ETA_PHASE_MIN_SPAN:
+        return max(phase_elapsed * (100 - percent) / phase_span, 0.0)
+
+    return None
+
+
+def _estimate_eta(percent, elapsed, message, state):
+    if percent <= 0 or percent >= 100:
+        state["eta"] = None
+        state["eta_at"] = elapsed
+        return None
+
+    raw = _raw_remaining(percent, elapsed, message, state)
+    previous_eta = state.get("eta")
 
     if previous_eta is None:
-        return int(max(remaining, 0))
+        if raw is None:
+            state["eta"] = None
+            state["eta_at"] = elapsed
+            return None
 
-    smoothing_factor = 0.7 if remaining >= previous_eta else 0.5
-    return int(round(max(smoothing_factor * previous_eta + (1 - smoothing_factor) * remaining, 0)))
+        value = max(raw, ETA_MIN_SECONDS)
+    else:
+        previous_at = state.get("eta_at", 0.0)
+        projected = max(previous_eta - (elapsed - previous_at), ETA_MIN_SECONDS)
+
+        if raw is None or raw >= projected:
+            value = projected
+        else:
+            value = projected + ETA_DOWN_SMOOTHING * (raw - projected)
+
+    value = max(value, ETA_MIN_SECONDS)
+    state["eta"] = value
+    state["eta_at"] = elapsed
+    return int(round(value))
 
 
 class ProgressReporter:
@@ -70,7 +104,7 @@ class ProgressReporter:
         self._on_phase = on_phase
         self._clock = clock
         self._started = clock()
-        self._state = {"eta": None, "phase": None, "phase_started": 0.0, "phase_percent": 0}
+        self._state = {"eta": None, "eta_at": 0.0, "phase": None, "phase_started": 0.0, "phase_percent": 0}
 
     def __call__(self, percent, message=None):
         elapsed = self._clock() - self._started
@@ -80,11 +114,9 @@ class ProgressReporter:
             self._state["phase"] = phase
             self._state["phase_started"] = elapsed
             self._state["phase_percent"] = percent
-            self._state["eta"] = None
 
             if self._on_phase is not None:
                 self._on_phase(phase, percent)
 
         eta = _estimate_eta(percent, elapsed, message, self._state)
-        self._state["eta"] = eta
         self._on_update(percent, message, eta, elapsed)
