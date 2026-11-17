@@ -607,24 +607,18 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
     def on_update(percent, message, eta, _elapsed):
         with state_lock:
             now = time.perf_counter()
-            previous_eta = state["eta"]
-            previous_at = state["eta_at"]
-            projected = None
 
-            if previous_eta is not None and previous_at is not None:
-                projected = max(previous_eta - (now - previous_at), 0)
-
-            if eta is None:
-                next_eta = projected
-            elif projected is None:
-                next_eta = eta
-            else:
-                next_eta = min(projected, eta)
+            if eta is not None:
+                # ETA dari server dipakai langsung, termasuk saat nilainya naik.
+                state["eta"] = eta
+                state["eta_at"] = now
+            elif state["eta"] is not None and state["eta_at"] is not None:
+                # Server belum punya estimasi baru: biarkan hitungan mundur jalan.
+                state["eta"] = max(state["eta"] - (now - state["eta_at"]), 0)
+                state["eta_at"] = now
 
             state["percent"] = percent
             state["message"] = message
-            state["eta"] = next_eta
-            state["eta_at"] = now if next_eta is not None else None
 
     def on_wait(_waited, position):
         with state_lock:

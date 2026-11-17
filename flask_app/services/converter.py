@@ -12,9 +12,8 @@ from decimal import Decimal, InvalidOperation
 import pandas
 import pdfplumber
 from flask import current_app, has_app_context
-from openpyxl import Workbook
 
-from flask_app.services import concurrency
+from flask_app.services import concurrency, xlsx_writer
 from pdf_worker import (
     FAST_WORDS_AVAILABLE,
     PDF_TABLE_SETTINGS,
@@ -166,12 +165,6 @@ def convert_csv_to_excel(input_path, output_path, progress=None):
 
 
 def _write_excel(dataframe, output_path, sheet_name="Sheet1", include_header=True, progress=None, percent_range=None):
-    workbook = Workbook(write_only=True)
-    sheet = workbook.create_sheet(sheet_name)
-
-    if include_header:
-        sheet.append(list(dataframe.columns))
-
     total_rows = len(dataframe)
     reporting = progress is not None and percent_range is not None and total_rows > 0
     start_percent = end_percent = 0
@@ -181,14 +174,18 @@ def _write_excel(dataframe, output_path, sheet_name="Sheet1", include_header=Tru
         start_percent, end_percent = percent_range
         step = WRITE_PROGRESS_ROW_STEP or max(1, total_rows // 200)
 
-    for index, row in enumerate(dataframe.itertuples(index=False, name=None), start=1):
-        sheet.append(row)
+    def on_row(index):
+        percent = start_percent + int(round((end_percent - start_percent) * index / total_rows))
+        _report_progress(progress, percent, "Menulis file Excel")
 
-        if reporting and index % step == 0:
-            percent = start_percent + int(round((end_percent - start_percent) * index / total_rows))
-            _report_progress(progress, percent, "Menulis file Excel")
-
-    workbook.save(output_path)
+    xlsx_writer.write_xlsx(
+        dataframe.itertuples(index=False, name=None),
+        output_path,
+        columns=list(dataframe.columns) if include_header else None,
+        sheet_name=sheet_name,
+        on_row=on_row if reporting else None,
+        progress_step=step,
+    )
 
     if reporting:
         _report_progress(progress, end_percent, "Menulis file Excel")
@@ -1021,13 +1018,30 @@ def _normalize_table(table):
     return table
 
 
-_IDENTIFIER_PLAIN = re.compile(r"0\d+")
-_IDENTIFIER_GROUPED = re.compile(r"0\d{1,2}(?:,\d{3})+")
 _SIMPLE_INTEGER = re.compile(r"[+-]?\d+")
 _TOKEN_SEPARATOR = re.compile(r"[\n\r\t ]")
 _HEADER_DIGIT = re.compile(r"\d")
 CSV_DELIMITERS = (",", ";", "\t", "|")
 CSV_HEADER_SCAN_LINES = int(os.environ.get("KONVERTER_HEADER_SCAN_LINES", "200"))
+
+# Penyaring cepat: token yang lolos ini adalah satu-satunya yang mungkin bisa
+# diubah menjadi angka oleh _to_number_from_token(). Token lain langsung
+# dikembalikan apa adanya tanpa melempar InvalidOperation.
+_NUMERIC_TOKEN_SCREEN = re.compile(
+    r"[+-]?(?:[\d_.,]+(?:[eE][+-]?\d+)?|(?:s?nan|inf(?:inity)?))",
+    re.IGNORECASE,
+)
+
+
+def _is_numeric_candidate(token):
+    if _NUMERIC_TOKEN_SCREEN.fullmatch(token):
+        return True
+
+    # Decimal() mengabaikan garis bawah di posisi mana pun (mis. "_-58").
+    if "_" in token:
+        return bool(_NUMERIC_TOKEN_SCREEN.fullmatch(token.replace("_", "")))
+
+    return False
 
 
 def _normalize_nominal_values(dataframe, progress=None, percent_range=None):
@@ -1054,10 +1068,13 @@ def _normalize_nominal_values(dataframe, progress=None, percent_range=None):
 
 
 def _has_identifier_value(cleaned_series):
-    return bool(
-        cleaned_series.str.fullmatch(_IDENTIFIER_PLAIN.pattern, na=False).any()
-        or cleaned_series.str.fullmatch(_IDENTIFIER_GROUPED.pattern, na=False).any()
-    )
+    # _clean_number_token sudah membuang koma, jadi pola berkelompok tidak
+    # mungkin cocok lagi; cukup periksa "0" diikuti digit desimal.
+    for token in cleaned_series:
+        if isinstance(token, str) and token[:1] == "0" and token[1:].isdecimal():
+            return True
+
+    return False
 
 
 def _clean_series_token(column_series):
@@ -1070,6 +1087,11 @@ def _normalize_nominal_column(column_series, cleaned_series=None):
 
     values = column_series.tolist()
     tokens = cleaned_series.tolist()
+
+    # Kolom teks murni tidak perlu diproses satu per satu.
+    if not any(_is_numeric_candidate(token) for token in tokens):
+        return column_series
+
     result = []
 
     for index, value in enumerate(values):

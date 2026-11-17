@@ -38,6 +38,7 @@ def _phase_key(message):
 ETA_MIN_SECONDS = 1.0
 ETA_PHASE_WARMUP_SECONDS = 0.4
 ETA_PHASE_MIN_SPAN = 2
+ETA_UP_SMOOTHING = 0.5
 ETA_DOWN_SMOOTHING = 0.35
 
 
@@ -50,12 +51,6 @@ def _raw_remaining(percent, elapsed, message, state):
 
         if pages_read > 0:
             return max(elapsed * (total_pages - pages_read) / pages_read, 0.0)
-
-    # Laju per fase hanya bisa dipercaya pada fase tulis (fase terakhir).
-    # Fase normalisasi berjalan jauh lebih cepat daripada fase tulis, sehingga
-    # ekstrapolasinya membuat countdown jatuh ke 1 detik terlalu dini.
-    if state.get("phase") != "write":
-        return None
 
     phase_elapsed = elapsed - state.get("phase_started", 0.0)
     phase_span = percent - state.get("phase_percent", percent)
@@ -86,8 +81,11 @@ def _estimate_eta(percent, elapsed, message, state):
         previous_at = state.get("eta_at", 0.0)
         projected = max(previous_eta - (elapsed - previous_at), ETA_MIN_SECONDS)
 
-        if raw is None or raw >= projected:
+        if raw is None:
             value = projected
+        elif raw > projected:
+            # ETA boleh naik lagi bila laju nyata lebih lambat dari perkiraan.
+            value = projected + ETA_UP_SMOOTHING * (raw - projected)
         else:
             value = projected + ETA_DOWN_SMOOTHING * (raw - projected)
 
