@@ -1,5 +1,7 @@
+import logging
 import os
 import re
+import time
 from typing import Optional
 
 try:
@@ -8,9 +10,10 @@ except ImportError:
     streamlit = None
 
 try:
-    from supabase import Client, create_client
+    from supabase import Client, ClientOptions, create_client
 except ImportError:
     Client = None
+    ClientOptions = None
     create_client = None
 
 SOURCE_BUCKET = "sources"
@@ -20,6 +23,8 @@ SIGNED_URL_TTL = 3600
 _CLIENT_KEY = "_sb_client"
 _SESSION_KEY = "_sb_session"
 _USER_KEY = "_sb_user"
+
+logger = logging.getLogger(__name__)
 
 
 def _secrets_section() -> dict:
@@ -70,8 +75,14 @@ def get_client() -> Optional["Client"]:
 
     if client is None:
         config = _config()
+        options = (
+            ClientOptions(auto_refresh_token=False, persist_session=False)
+            if ClientOptions is not None
+            else None
+        )
+
         try:
-            client = create_client(config["url"], config["anon_key"])
+            client = create_client(config["url"], config["anon_key"], options)
         except Exception:
             return None
 
@@ -94,21 +105,57 @@ def _restore_session(client) -> None:
         streamlit.session_state.pop(_USER_KEY, None)
 
 
-def _remember_user(user) -> dict:
-    user_info = {"id": user.id, "email": getattr(user, "email", "") or ""}
-    streamlit.session_state[_USER_KEY] = user_info
-
+def _store_session_tokens() -> None:
     try:
         session = client_session()
         if session:
             streamlit.session_state[_SESSION_KEY] = {
                 "access_token": session.access_token,
                 "refresh_token": session.refresh_token,
+                "expires_at": int(getattr(session, "expires_at", 0) or 0),
             }
     except Exception:
         pass
 
+
+def _remember_user(user) -> dict:
+    if user is None:
+        return current_user() or {}
+
+    user_info = {"id": user.id, "email": getattr(user, "email", "") or ""}
+    streamlit.session_state[_USER_KEY] = user_info
+    _store_session_tokens()
     return user_info
+
+
+def _clear_session() -> None:
+    if streamlit is None:
+        return
+
+    for session_key in (_SESSION_KEY, _USER_KEY):
+        streamlit.session_state.pop(session_key, None)
+
+
+def _is_expired_session_error(error: Exception) -> bool:
+    text = " ".join(
+        [
+            str(error),
+            str(getattr(error, "code", "") or ""),
+            str(getattr(error, "type", "") or ""),
+        ]
+    ).lower()
+
+    return any(
+        marker in text
+        for marker in (
+            "refresh token",
+            "invalid_grant",
+            "invalid refresh",
+            "session_not_found",
+            "jwt expired",
+            "token has expired",
+        )
+    )
 
 
 _client_for_session = None
@@ -131,6 +178,133 @@ def current_user() -> Optional[dict]:
         return None
 
     return streamlit.session_state.get(_USER_KEY)
+
+
+def export_session() -> Optional[dict]:
+    if streamlit is None:
+        return None
+
+    user = current_user()
+    session = client_session() or streamlit.session_state.get(_SESSION_KEY)
+
+    if not user or not session:
+        return None
+
+    access_token = getattr(session, "access_token", None)
+    refresh_token = getattr(session, "refresh_token", None)
+
+    if isinstance(session, dict):
+        access_token = session.get("access_token")
+        refresh_token = session.get("refresh_token")
+
+    if not access_token or not refresh_token:
+        return None
+
+    return {
+        "backend": "supabase",
+        "v": 1,
+        "user": user,
+        "session": {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_at": int(
+                getattr(session, "expires_at", 0)
+                or (session.get("expires_at") if isinstance(session, dict) else 0)
+                or 0
+            ),
+        },
+    }
+
+
+def restore_session(payload: dict) -> Optional[dict]:
+    if streamlit is None or not isinstance(payload, dict):
+        return None
+
+    if str(payload.get("backend") or "").lower() != "supabase":
+        return None
+
+    user = payload.get("user")
+    session = payload.get("session")
+
+    if not isinstance(user, dict) or not user.get("id"):
+        return None
+
+    if not isinstance(session, dict):
+        return None
+
+    access_token = session.get("access_token")
+    refresh_token = session.get("refresh_token")
+
+    if not access_token or not refresh_token:
+        return None
+
+    session_state = streamlit.session_state
+    session_state.pop(_CLIENT_KEY, None)
+    session_state[_USER_KEY] = {
+        "id": user.get("id"),
+        "email": user.get("email", "") or "",
+    }
+    session_state[_SESSION_KEY] = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": int(session.get("expires_at") or 0),
+    }
+
+    if get_client() is None or client_session() is None:
+        _clear_session()
+        return None
+
+    return ensure_session()
+
+
+def ensure_session() -> Optional[dict]:
+    if streamlit is None:
+        return None
+
+    client = get_client()
+    user = current_user()
+
+    if client is None or user is None:
+        return user
+
+    try:
+        session = client.auth.get_session()
+    except Exception as error:
+        logger.exception("Gagal membaca sesi Supabase")
+
+        if _is_expired_session_error(error):
+            _clear_session()
+            return None
+
+        return user
+
+    if session is None:
+        _clear_session()
+        return None
+
+    expires_at = int(getattr(session, "expires_at", 0) or 0)
+
+    if expires_at and expires_at - time.time() > 120:
+        return user
+
+    try:
+        response = client.auth.refresh_session(session.refresh_token)
+    except Exception as error:
+        logger.exception("Gagal memperbarui access token Supabase")
+
+        if _is_expired_session_error(error):
+            _clear_session()
+            return None
+
+        return user
+
+    _store_session_tokens()
+    refreshed_user = getattr(response, "user", None)
+
+    if refreshed_user is None:
+        return user
+
+    return _remember_user(refreshed_user)
 
 
 def sign_up(email: str, password: str) -> dict:

@@ -222,6 +222,68 @@ def current_user() -> Optional[dict]:
     return streamlit.session_state.get(_USER_KEY)
 
 
+def export_session() -> Optional[dict]:
+    if streamlit is None:
+        return None
+
+    user = current_user()
+    session = streamlit.session_state.get(_SESSION_KEY)
+
+    if not user or not isinstance(session, dict):
+        return None
+
+    cookie = session.get("cookie")
+
+    if not cookie:
+        return None
+
+    return {
+        "backend": "appwrite",
+        "v": 1,
+        "user": user,
+        "session": {"cookie": cookie},
+    }
+
+
+def restore_session(payload: dict) -> Optional[dict]:
+    if streamlit is None or not isinstance(payload, dict):
+        return None
+
+    if str(payload.get("backend") or "").lower() != "appwrite":
+        return None
+
+    user = payload.get("user")
+    session = payload.get("session")
+
+    if not isinstance(user, dict) or not user.get("id"):
+        return None
+
+    if not isinstance(session, dict) or not session.get("cookie"):
+        return None
+
+    session_state = streamlit.session_state
+    session_state.pop(_CLIENT_KEY, None)
+    session_state[_USER_KEY] = {
+        "id": user.get("id"),
+        "email": user.get("email", "") or "",
+    }
+    session_state[_SESSION_KEY] = {
+        "cookie": session.get("cookie"),
+        "user_id": user.get("id"),
+    }
+
+    if get_client() is None:
+        session_state.pop(_SESSION_KEY, None)
+        session_state.pop(_USER_KEY, None)
+        return None
+
+    return current_user()
+
+
+def ensure_session() -> Optional[dict]:
+    return current_user()
+
+
 def sign_up(email: str, password: str) -> dict:
     client = _require_client()
     account = Account(client)

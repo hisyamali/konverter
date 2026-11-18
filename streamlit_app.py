@@ -1,17 +1,22 @@
+import base64
 import html
+import json
+import logging
 import os
 import re
 import tempfile
 import threading
 import time
 from pathlib import Path
+from urllib.parse import unquote
 from uuid import uuid4
 
 os.environ.setdefault("KONVERTER_MAX_WORKERS", "4" if os.name == "nt" else "2")
 os.environ.setdefault("KONVERTER_MAX_UPLOAD_MB", "50")
 
 import streamlit
-import streamlit.components.v1 as components
+
+logger = logging.getLogger(__name__)
 
 EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSS_PATH = Path(__file__).parent / "flask_app" / "static" / "css" / "streamlit.css"
@@ -21,6 +26,13 @@ THEME_SCRIPT_PATH = Path(__file__).parent / "flask_app" / "static" / "js" / "the
 
 GUEST_MAX_MB = int(os.environ.get("KONVERTER_GUEST_MAX_UPLOAD_MB", "10") or "10")
 USER_MAX_MB = int(os.environ.get("KONVERTER_USER_MAX_UPLOAD_MB", "50") or "50")
+
+SESSION_COOKIE_NAME = "konverter_session"
+SESSION_IDLE_SECONDS = max(
+    30, int(os.environ.get("KONVERTER_SESSION_IDLE_SECONDS", str(4 * 60 * 60)) or 4 * 60 * 60)
+)
+PREVIEW_CACHE_KEY = "konverter_preview_cache"
+PREVIEW_CACHE_LIMIT = 8
 
 if __name__ == "__main__":
     from flask_app.services import store
@@ -55,9 +67,10 @@ if __name__ == "__main__":
         streamlit.markdown(f"<style>{CSS_PATH.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
     if THEME_SCRIPT_PATH.exists():
-        components.html(
+        streamlit.iframe(
             f"<script>{THEME_SCRIPT_PATH.read_text(encoding='utf-8')}</script>",
-            height=0,
+            height=1,
+            alt="konverter-theme",
         )
 
 
@@ -318,15 +331,209 @@ def _overlay_html(percent, message, eta, elapsed) -> str:
     )
 
 
-def _boot_html() -> str:
+def _loading_html(title: str, text: str) -> str:
     return (
         '<div class="konverter-boot" role="status" aria-live="polite">'
         '<div class="konverter-boot-card">'
         '<span class="konverter-boot-spinner" aria-hidden="true"></span>'
-        '<p class="konverter-boot-title">Memulihkan sesi…</p>'
-        '<p class="konverter-boot-text">Menyiapkan akun dan riwayat konversimu.</p>'
+        f'<p class="konverter-boot-title">{_escape_html(title)}</p>'
+        f'<p class="konverter-boot-text">{_escape_html(text)}</p>'
         "</div></div>"
     )
+
+
+def _boot_html() -> str:
+    return _loading_html("Memulihkan sesi…", "Menyiapkan akun dan riwayat konversimu.")
+
+
+def _session_idle_text() -> str:
+    minutes = max(1, SESSION_IDLE_SECONDS // 60)
+
+    if minutes >= 60 and minutes % 60 == 0:
+        return f"{minutes // 60} jam"
+
+    return f"{minutes} menit"
+
+
+_SESSION_BRIDGE_TEMPLATE = """
+(function () {
+  "use strict";
+  var cookieName = "__COOKIE_NAME__";
+  var idleSeconds = __IDLE_SECONDS__;
+  var idleLimitMs = idleSeconds * 1000;
+  var payloadBase64 = "__PAYLOAD__";
+  var shouldClear = __CLEAR__;
+  var hostWindow = window;
+  var hostDocument = document;
+
+  try {
+    if (window.parent && window.parent !== window) {
+      hostWindow = window.parent;
+      hostDocument = hostWindow.document;
+    }
+  } catch (error) {
+    return;
+  }
+
+  function cookieSuffix(maxAge) {
+    return "; path=/; max-age=" + maxAge + "; SameSite=Lax" +
+      (hostWindow.location.protocol === "https:" ? "; Secure" : "");
+  }
+
+  function writeCookie(value, maxAge) {
+    hostDocument.cookie = cookieName + "=" + value + cookieSuffix(maxAge);
+  }
+
+  function decodePayload(value) {
+    var normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+
+    while (normalized.length % 4) {
+      normalized += "=";
+    }
+
+    var binary = atob(normalized);
+    var bytes = new Uint8Array(binary.length);
+
+    for (var index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
+  function persistSession() {
+    var payload = hostWindow.__konverterSessionPayload;
+
+    if (!payload) {
+      return;
+    }
+
+    payload.last_active = Math.floor(Date.now() / 1000);
+    writeCookie(encodeURIComponent(JSON.stringify(payload)), idleSeconds);
+  }
+
+  function checkIdle() {
+    if (!hostWindow.__konverterSessionPayload) {
+      return;
+    }
+
+    var lastActive = hostWindow.__konverterSessionLastActive || Date.now();
+
+    if (Date.now() - lastActive > idleLimitMs) {
+      hostWindow.__konverterSessionPayload = null;
+      writeCookie("", 0);
+      hostWindow.location.reload();
+    }
+  }
+
+  hostWindow.__konverterSessionWrite = persistSession;
+  hostWindow.__konverterSessionLastActive = Date.now();
+
+  if (shouldClear || !payloadBase64) {
+    hostWindow.__konverterSessionPayload = null;
+    writeCookie("", 0);
+    return;
+  }
+
+  try {
+    hostWindow.__konverterSessionPayload = decodePayload(payloadBase64);
+  } catch (error) {
+    hostWindow.__konverterSessionPayload = null;
+    writeCookie("", 0);
+    return;
+  }
+
+  persistSession();
+
+  if (!hostDocument.__konverterSessionBound) {
+    hostDocument.__konverterSessionBound = true;
+    var lastWrite = 0;
+
+    ["click", "keydown", "scroll", "touchstart", "visibilitychange"].forEach(function (eventName) {
+      hostDocument.addEventListener(eventName, function () {
+        checkIdle();
+
+        var now = Date.now();
+        hostWindow.__konverterSessionLastActive = now;
+
+        if (now - lastWrite >= 30000) {
+          lastWrite = now;
+
+          if (hostWindow.__konverterSessionWrite) {
+            hostWindow.__konverterSessionWrite();
+          }
+        }
+      }, true);
+    });
+
+    hostWindow.setInterval(checkIdle, 30000);
+  }
+})();
+"""
+
+
+def _session_bridge_html(payload=None, clear: bool = False) -> str:
+    encoded = ""
+
+    if payload and not clear:
+        raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        encoded = base64.urlsafe_b64encode(raw).decode("ascii")
+
+    script = (
+        _SESSION_BRIDGE_TEMPLATE.replace("__COOKIE_NAME__", SESSION_COOKIE_NAME)
+        .replace("__IDLE_SECONDS__", str(SESSION_IDLE_SECONDS))
+        .replace("__PAYLOAD__", encoded)
+        .replace("__CLEAR__", "true" if clear else "false")
+    )
+    return f"<script>{script}</script>"
+
+
+def _render_session_bridge(payload=None, clear: bool = False) -> None:
+    streamlit.iframe(_session_bridge_html(payload, clear), height=1, alt="konverter-session")
+
+
+def _restore_cookie_session():
+    session_state = streamlit.session_state
+
+    try:
+        raw_cookie = streamlit.context.cookies.get(SESSION_COOKIE_NAME)
+    except Exception:
+        raw_cookie = None
+
+    if not raw_cookie:
+        return None
+
+    try:
+        payload = json.loads(unquote(str(raw_cookie)))
+        last_active = int(float(payload.get("last_active") or 0))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        session_state["konverter_clear_cookie"] = True
+        return None
+
+    if not isinstance(payload, dict) or last_active <= 0:
+        session_state["konverter_clear_cookie"] = True
+        return None
+
+    if time.time() - last_active > SESSION_IDLE_SECONDS:
+        session_state["konverter_clear_cookie"] = True
+        session_state["konverter_auth_notice"] = (
+            f"Sesi berakhir karena tidak aktif selama {_session_idle_text()}. Silakan masuk lagi."
+        )
+        session_state["konverter_page"] = "auth"
+        return None
+
+    try:
+        user = store.restore_session(payload)
+    except Exception:
+        logger.exception("Gagal memulihkan sesi login dari cookie")
+        user = None
+
+    if not user:
+        session_state["konverter_clear_cookie"] = True
+        return None
+
+    session_state["session_last_active"] = last_active
+    return user
 
 
 def _boot_user():
@@ -341,7 +548,11 @@ def _boot_user():
 
     try:
         user = store.current_user()
+
+        if not user:
+            user = _restore_cookie_session()
     except Exception:
+        logger.exception("Gagal memulihkan sesi saat aplikasi dimuat")
         user = None
 
     remaining = 0.45 - (time.perf_counter() - started)
@@ -349,8 +560,69 @@ def _boot_user():
         time.sleep(remaining)
 
     session_state["konverter_booted"] = True
+
+    if user:
+        session_state.setdefault("session_last_active", time.time())
+
     splash.empty()
     return user
+
+
+def _session_is_idle() -> bool:
+    last_active = streamlit.session_state.get("session_last_active")
+
+    if not last_active:
+        return False
+
+    try:
+        return time.time() - float(last_active) > SESSION_IDLE_SECONDS
+    except (TypeError, ValueError):
+        return False
+
+
+def _end_session(notice: str) -> None:
+    try:
+        store.sign_out()
+    except Exception:
+        logger.exception("Gagal mengakhiri sesi login")
+
+    session_state = streamlit.session_state
+    session_state["konverter_clear_cookie"] = True
+    session_state["konverter_auth_notice"] = notice
+    session_state["konverter_page"] = "auth"
+    session_state["session_last_active"] = None
+    streamlit.rerun()
+
+
+def _current_session_payload():
+    try:
+        payload = store.export_session()
+    except Exception:
+        logger.exception("Gagal menyiapkan data sesi untuk cookie")
+        return None
+
+    if not payload:
+        return None
+
+    payload["v"] = max(int(payload.get("v") or 1), 1)
+    payload["last_active"] = int(streamlit.session_state.get("session_last_active") or time.time())
+    return payload
+
+
+def _apply_session_bridge(user) -> None:
+    session_state = streamlit.session_state
+
+    if session_state.pop("konverter_clear_cookie", False):
+        _render_session_bridge(clear=True)
+        return
+
+    if not user:
+        return
+
+    payload = _current_session_payload()
+
+    if payload:
+        _render_session_bridge(payload)
 
 
 def _status_label(status: str) -> str:
@@ -386,27 +658,52 @@ def _save_upload(uploaded) -> str:
 
     session_state["input_path"] = path
     session_state["upload_sig"] = signature
+    session_state.pop(PREVIEW_CACHE_KEY, None)
+    session_state.pop("convert_error", None)
     for key in ("output_bytes", "output_name", "output_sig", "output_kind"):
         session_state.pop(key, None)
     return path
 
 
 def _drop_temp_input() -> None:
-    path = streamlit.session_state.pop("input_path", None)
-    streamlit.session_state.pop("upload_sig", None)
+    session_state = streamlit.session_state
+    path = session_state.pop("input_path", None)
+    session_state.pop("upload_sig", None)
 
     if path:
+        session_state.pop(PREVIEW_CACHE_KEY, None)
+
         try:
             os.unlink(path)
         except OSError:
             pass
 
 
-@streamlit.cache_data(show_spinner="Memeriksa file...", max_entries=8)
 def _cached_preview(kind: str, path: str, size: int, modification_time_nanoseconds: int):
-    if kind == "csv-to-excel":
-        return preview_csv_file(path)
-    return preview_pdf_file(path)
+    session_state = streamlit.session_state
+    cache = session_state.get(PREVIEW_CACHE_KEY)
+
+    if not isinstance(cache, dict):
+        cache = {}
+        session_state[PREVIEW_CACHE_KEY] = cache
+
+    cache_key = (kind, path, size, modification_time_nanoseconds)
+
+    if cache_key in cache:
+        return cache[cache_key]
+
+    with streamlit.spinner("Memeriksa file..."):
+        if kind == "csv-to-excel":
+            data = preview_csv_file(path)
+        else:
+            data = preview_pdf_file(path)
+
+    cache[cache_key] = data
+
+    while len(cache) > PREVIEW_CACHE_LIMIT:
+        cache.pop(next(iter(cache)))
+
+    return data
 
 
 def _navigate(page: str) -> None:
@@ -488,6 +785,8 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
                 elif slot == "keluar":
                     if streamlit.button("Keluar", key="konverter-navbar-sign-out", width="stretch"):
                         store.sign_out()
+                        streamlit.session_state["konverter_clear_cookie"] = True
+                        streamlit.session_state["session_last_active"] = None
                         _navigate("home")
                 elif slot == "theme":
                     streamlit.markdown(_theme_toggle_html(), unsafe_allow_html=True)
@@ -496,6 +795,73 @@ def _brand_row(user, back_label=None, show_login=True, show_history=True) -> Non
                         '<span class="konverter-navbar-badge">Login belum aktif</span>',
                         unsafe_allow_html=True,
                     )
+
+
+def _set_convert_error(kind: str, message: str, level: str = "error") -> None:
+    streamlit.session_state["convert_error"] = {
+        "kind": kind,
+        "message": str(message),
+        "level": level,
+        "sig": streamlit.session_state.get("upload_sig"),
+    }
+
+
+def _clear_stale_convert_error() -> None:
+    session_state = streamlit.session_state
+    error = session_state.get("convert_error")
+
+    if not isinstance(error, dict):
+        return
+
+    signature = error.get("sig")
+
+    if not signature:
+        return
+
+    uploaded = session_state.get("konverter-upload")
+
+    if uploaded is None or _signature(uploaded) != signature:
+        session_state.pop("convert_error", None)
+
+
+def _render_convert_error(kind: str) -> None:
+    error = streamlit.session_state.get("convert_error")
+
+    if not isinstance(error, dict) or error.get("kind") != kind:
+        return
+
+    with streamlit.container(key="konverter-convert-error"):
+        if error.get("level") == "warning":
+            streamlit.warning(error.get("message") or "Konversi belum selesai.")
+        else:
+            streamlit.error(error.get("message") or "Konversi gagal.")
+
+        if streamlit.button("Tutup pesan", key="konverter-convert-error-dismiss"):
+            streamlit.session_state.pop("convert_error", None)
+            streamlit.rerun()
+
+
+@streamlit.dialog("Konversi belum selesai", dismissible=True, on_dismiss="rerun")
+def _convert_error_dialog(message: str, level: str = "error") -> None:
+    if level == "warning":
+        streamlit.warning(message)
+    else:
+        streamlit.error(message)
+
+    streamlit.caption("File sumber tetap aman. Periksa pesan di atas, lalu klik Konversi Sekarang lagi.")
+
+    if streamlit.button("Tutup", key="konverter-dialog-close", type="primary", width="stretch"):
+        streamlit.rerun()
+
+
+def _finish_job_safe(job_id, status: str, **fields) -> None:
+    if not job_id:
+        return
+
+    try:
+        store.finish_job(job_id, status, **fields)
+    except Exception:
+        logger.exception("Gagal memperbarui status job %s menjadi %s", job_id, status)
 
 
 def _page_home(user, limit_mb: int) -> None:
@@ -521,6 +887,13 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
     ) == streamlit.session_state.get("upload_sig") else (2 if streamlit.session_state.get("converting") else 1)
 
     _brand_row(user, back_label="← Kembali")
+
+    _clear_stale_convert_error()
+
+    if streamlit.session_state.pop("convert_pending", False) and not streamlit.session_state.get("converting"):
+        streamlit.warning("Konversi sebelumnya terputus sebelum selesai. Silakan coba lagi.")
+
+    _render_convert_error(kind)
 
     with streamlit.container(key="konverter-hero"):
         streamlit.markdown(_hero_html(subtitle), unsafe_allow_html=True)
@@ -559,8 +932,10 @@ def _page_tool(kind: str, user, limit_mb: int) -> None:
                     try:
                         preview_data = _cached_preview(kind, input_path, file_stat.st_size, file_stat.st_mtime_ns)
                     except ValueError as error:
+                        logger.warning("Pratinjau ditolak untuk %s: %s", input_path, error)
                         streamlit.warning(str(error))
                     except Exception as error:
+                        logger.exception("Gagal membaca pratinjau file %s", input_path)
                         streamlit.error(f"Tidak dapat membaca file: {error}")
                     else:
                         streamlit.markdown(
@@ -592,6 +967,9 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
     if not streamlit.button("Konversi Sekarang", type="primary", key="konverter-convert"):
         return
 
+    session_state = streamlit.session_state
+    session_state.pop("convert_error", None)
+    session_state["convert_pending"] = True
     overlay = streamlit.empty()
 
     state_lock = threading.Lock()
@@ -674,6 +1052,7 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
                 user["id"], kind, uploaded.name, uploaded.size, source_path
             )
         except Exception as error:
+            logger.exception("Gagal menyimpan sumber ke riwayat (job=%s)", job_id)
             streamlit.warning(f"Gagal menyimpan sumber ke riwayat: {error}")
 
     def conversion_worker():
@@ -699,6 +1078,9 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
     worker = threading.Thread(target=conversion_worker, name="konverter-conversion", daemon=True)
     worker.start()
 
+    error_message = None
+    error_level = "error"
+
     try:
         while not render():
             time.sleep(0.4)
@@ -718,7 +1100,7 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
             try:
                 result_path = store.object_path(user["id"], object_id, result_name)
                 store.upload_file(store.RESULT_BUCKET, result_path, result_bytes, EXCEL_MIME)
-                store.finish_job(
+                _finish_job_safe(
                     job_id,
                     "completed",
                     result_name=result_name,
@@ -729,24 +1111,34 @@ def _run_conversion(kind: str, user, uploaded, input_path: str, preview_data: di
                     duration_ms=int((time.perf_counter() - duration_started) * 1000),
                 )
             except Exception as error:
+                logger.exception("Gagal menyimpan hasil ke riwayat (job=%s)", job_id)
                 streamlit.warning(f"Hasil tidak tersimpan ke riwayat: {error}")
     except ValueError as error:
-        store.finish_job(job_id, "failed", error=str(error))
-        streamlit.error(str(error))
+        logger.warning("Konversi ditolak (job=%s): %s", job_id, error)
+        _finish_job_safe(job_id, "failed", error=str(error))
+        error_message = f"Konversi gagal: {error}"
     except QueueTimeout as error:
-        store.finish_job(job_id, "failed", error=str(error))
-        streamlit.warning(str(error))
+        logger.warning("Konversi menunggu antrean terlalu lama (job=%s): %s", job_id, error)
+        _finish_job_safe(job_id, "failed", error=str(error))
+        error_message = str(error)
+        error_level = "warning"
     except Exception as error:
-        store.finish_job(job_id, "failed", error=str(error))
-        streamlit.error(f"Konversi gagal: {error}")
+        logger.exception("Konversi gagal (kind=%s, job=%s)", kind, job_id)
+        _finish_job_safe(job_id, "failed", error=str(error))
+        error_message = f"Konversi gagal: {error}"
     finally:
         worker.join(timeout=5)
         overlay.empty()
         streamlit.session_state["converting"] = False
+        streamlit.session_state["convert_pending"] = False
         try:
             os.unlink(output_path)
         except OSError:
             pass
+
+    if error_message:
+        _set_convert_error(kind, error_message, error_level)
+        _convert_error_dialog(error_message, error_level)
 
 
 def _page_auth() -> None:
@@ -763,6 +1155,11 @@ def _page_auth() -> None:
         )
 
         with streamlit.container(key="konverter-panel"):
+            notice = streamlit.session_state.pop("konverter_auth_notice", None)
+
+            if notice:
+                streamlit.warning(notice)
+
             tab_in, tab_up = streamlit.tabs(["Masuk", "Daftar"])
 
             with tab_in:
@@ -778,11 +1175,22 @@ def _page_auth() -> None:
                     if not email or not password:
                         streamlit.warning("Isi email dan kata sandi.")
                     else:
+                        loading = streamlit.empty()
+                        loading.markdown(
+                            _loading_html("Memeriksa akun...", "Menghubungkan ke server akun."),
+                            unsafe_allow_html=True,
+                        )
+
                         try:
                             store.sign_in(email.strip(), password)
                         except Exception as error:
+                            logger.exception("Login gagal")
+                            loading.empty()
                             streamlit.error(_auth_error(error))
                         else:
+                            streamlit.session_state["session_last_active"] = time.time()
+                            streamlit.session_state.pop("konverter_auth_notice", None)
+                            loading.empty()
                             _navigate("home")
 
             with tab_up:
@@ -798,16 +1206,28 @@ def _page_auth() -> None:
                     if not email or len(password) < 8:
                         streamlit.warning("Isi email dan kata sandi minimal 8 karakter.")
                     else:
+                        loading = streamlit.empty()
+                        loading.markdown(
+                            _loading_html("Membuat akun...", "Menyiapkan akun Konverter untukmu."),
+                            unsafe_allow_html=True,
+                        )
+
                         try:
                             result = store.sign_up(email.strip(), password)
                         except Exception as error:
+                            logger.exception("Pendaftaran akun gagal")
+                            loading.empty()
                             streamlit.error(_auth_error(error))
                         else:
+                            loading.empty()
+
                             if result.get("needs_confirmation"):
                                 streamlit.success(
                                     "Akun dibuat. Cek email untuk konfirmasi, lalu masuk di tab Masuk."
                                 )
                             else:
+                                streamlit.session_state["session_last_active"] = time.time()
+                                streamlit.session_state.pop("konverter_auth_notice", None)
                                 _navigate("home")
 
 
@@ -944,6 +1364,25 @@ def _render_download(job: dict) -> None:
 
 if __name__ == "__main__":
     user = _boot_user()
+
+    if user:
+        if _session_is_idle():
+            _end_session(
+                f"Sesi berakhir karena tidak aktif selama {_session_idle_text()}. Silakan masuk lagi."
+            )
+
+        try:
+            user = store.ensure_session()
+        except Exception:
+            logger.exception("Gagal memperbarui sesi login")
+            user = store.current_user()
+
+        if user is None:
+            _end_session("Sesi login sudah berakhir. Silakan masuk lagi.")
+
+        streamlit.session_state["session_last_active"] = time.time()
+
+    _apply_session_bridge(user)
 
     if user is None and streamlit.session_state.get("konverter_page") == "history":
         streamlit.session_state["konverter_page"] = "auth"

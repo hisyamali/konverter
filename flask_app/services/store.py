@@ -89,6 +89,44 @@ def sign_out() -> None:
         backend_module.sign_out()
 
 
+def export_session() -> Optional[dict]:
+    backend_module = backend()
+
+    if backend_module is None:
+        return None
+
+    export_function = getattr(backend_module, "export_session", None)
+    return export_function() if export_function else None
+
+
+def restore_session(payload: Optional[dict]) -> Optional[dict]:
+    if not isinstance(payload, dict):
+        return None
+
+    backend_name = str(payload.get("backend") or "").strip().lower()
+    backend_module = _BACKEND_MODULES.get(backend_name)
+
+    if backend_module is None or not backend_module.is_configured():
+        return None
+
+    restore_function = getattr(backend_module, "restore_session", None)
+    return restore_function(payload) if restore_function else None
+
+
+def ensure_session() -> Optional[dict]:
+    backend_module = backend()
+
+    if backend_module is None:
+        return None
+
+    ensure_function = getattr(backend_module, "ensure_session", None)
+
+    if ensure_function:
+        return ensure_function()
+
+    return backend_module.current_user()
+
+
 def object_path(user_id: str, job_id: str, filename: str) -> str:
     backend_module = backend()
 
